@@ -95,7 +95,6 @@ class CalculatorScreen : Screen(Component.literal("MI-84 Calculator")) {
 
         super.render(guiGraphics, mouseX, mouseY, delta)
     }
-
     // don't pause the game
     override fun isPauseScreen() = false
 }
