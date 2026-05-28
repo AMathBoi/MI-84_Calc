@@ -68,10 +68,13 @@ class CalculatorScreen : Screen(Component.literal("MI-84 Calculator")) {
     }
 
     private fun onButtonClick(label: String) {
-        // what does this do?
+        // button -> action
         when (label) {
+            // c clears
             "C" -> expression = ""
+            // = evals
             "=" -> { /* TODO: evaluate */ }
+            // add it to the buffer
             else -> expression += label
         }
     }
@@ -80,17 +83,17 @@ class CalculatorScreen : Screen(Component.literal("MI-84 Calculator")) {
         // draw background
         guiGraphics.fill(0, 0, width, height, 0xFF181818.toInt())
 
-        // draw display area
-        guiGraphics.fill(centerX - displayWidth / 2 - 4,
-             centerY - displayHeight / 2 - 4,
-             centerX + displayWidth / 2 + 4,
-             centerY + displayHeight / 2 + 4,
+        // draw display area (centered around centerX)
+        guiGraphics.fill(centerX - displayWidth / 2,
+             centerY,
+             centerX + displayWidth / 2,
+             centerY + displayHeight,
              0xFF333333.toInt())
 
-        // draw text on display (right-aligned)
+        // draw text on display (centered in the display area)
         guiGraphics.drawCenteredString(font, expression,
             centerX,
-            centerY - displayHeight / 2 + 6,
+            centerY + displayHeight / 2,
             0xFFFFFFFF.toInt())
 
         super.render(guiGraphics, mouseX, mouseY, delta)

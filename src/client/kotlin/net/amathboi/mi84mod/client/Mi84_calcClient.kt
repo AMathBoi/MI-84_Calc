@@ -26,8 +26,7 @@ object Mi84_calcClient : ClientModInitializer {
                         Button.builder(
                             Component.literal("X"),
                             { _ ->
-                                // open the calculator screen, esc closes it
-                                client.setScreen(CalculatorScreen())
+                                //add widget logic here
 
                                 // testing
                                 client.player?.sendSystemMessage(Component.literal("Clicked!"))
