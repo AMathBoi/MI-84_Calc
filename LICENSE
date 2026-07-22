@@ -1,3 +1,8 @@
+===================================================================
+SOURCE CODE LICENSE
+===================================================================
+All Java source code, scripts, and build files in this project are
+licensed under the MIT License.
 The MIT License (MIT)
 
 Copyright (c) 2026 AMathBoi
@@ -19,3 +24,14 @@ THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
+
+===================================================================
+ASSETS LICENSE
+===================================================================
+All visual assets, 3D models, textures, animations, and audio files
+located in the `src/main/resources/assets` and `src/client/resources/assets` directory are copyright 
+AMathBoi 2026 and licensed under 
+Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 (CC BY-NC-ND 4.0).
+
+For full details on asset terms, see:
+https://creativecommons.org/licenses/by-nc-nd/4.0/
