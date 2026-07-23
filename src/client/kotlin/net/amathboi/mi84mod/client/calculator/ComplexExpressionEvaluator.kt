@@ -98,18 +98,18 @@ internal class ComplexExpressionEvaluator(
     }
 
     private fun parseProduct(): ComplexNumber {
-        var result = parsePower()
+        var result = parseUnary()
         while (index < expression.length) {
             result = when {
                 expression[index] == '*' -> {
                     index++
-                    result * parsePower()
+                    result * parseUnary()
                 }
                 expression[index] == '/' -> {
                     index++
-                    result / parsePower()
+                    result / parseUnary()
                 }
-                startsPrimaryAt(index) -> result * parsePower()
+                startsPrimaryAt(index) -> result * parseUnary()
                 else -> return result
             }
         }
@@ -125,10 +125,10 @@ internal class ComplexExpressionEvaluator(
             )
 
     private fun parsePower(): ComplexNumber {
-        val result = parseUnary()
+        val result = parsePrimary()
         return if (index < expression.length && expression[index] == '^') {
             index++
-            result.pow(parsePower())
+            result.pow(parseUnary())
         } else {
             result
         }
@@ -139,7 +139,7 @@ internal class ComplexExpressionEvaluator(
             index++
             -parseUnary()
         } else {
-            parsePrimary()
+            parsePower()
         }
 
     private fun parsePrimary(): ComplexNumber {

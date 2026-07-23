@@ -3,8 +3,6 @@ package net.amathboi.mi84mod.client.calculator
 import java.math.BigDecimal
 import java.math.MathContext
 import java.math.RoundingMode
-import java.nio.charset.StandardCharsets
-import java.nio.file.Files
 import java.nio.file.Path
 import net.fabricmc.loader.api.FabricLoader
 
@@ -20,10 +18,8 @@ object ModeSettingsMemory {
         ModeSetting("Decimal Display", listOf("Float") + (0..9).map(Int::toString), "Float"),
         // Keep the mod's existing radian behavior until the player deliberately chooses Degree.
         ModeSetting("Angle Unit", listOf("Degree", "Radian"), "Radian"),
-        ModeSetting("Graph Type", listOf("Function", "Parametric", "Polar", "Sequence"), "Function"),
         ModeSetting("Graphing Order", listOf("Sequential", "Simul"), "Sequential"),
         ModeSetting("Complex Number Format", listOf("Real", "a+bi", "re^(θi)"), "Real"),
-        ModeSetting("Screen Layout", listOf("Full", "Horizontal-G", "Vertical-G"), "Full"),
         ModeSetting("Fraction Type", listOf("n/d", "Un/d"), "n/d"),
         ModeSetting("Answers", listOf("Auto", "Dec"), "Auto"),
         ModeSetting("Stat Diagnostics", listOf("Off", "On"), "Off"),
@@ -79,6 +75,9 @@ object ModeSettingsMemory {
     /** Applies Number Display and Decimal Display without changing the calculated value. */
     fun formatNumber(value: BigDecimal): String {
         val decimalPlaces = selectedOption(DECIMAL_DISPLAY_INDEX).toIntOrNull()
+        if (value.compareTo(BigDecimal.ZERO) != 0 && value.abs() < NORMAL_SCIENTIFIC_THRESHOLD) {
+            return formatExponent(value, decimalPlaces, engineering = false)
+        }
         return when (selectedOption(NUMBER_DISPLAY_INDEX)) {
             "Sci" -> formatExponent(value, decimalPlaces, engineering = false)
             "Eng" -> formatExponent(value, decimalPlaces, engineering = true)
@@ -133,9 +132,8 @@ object ModeSettingsMemory {
     }
 
     private fun load() {
-        if (!Files.exists(memoryFile)) return
-        runCatching {
-            Files.readAllLines(memoryFile, StandardCharsets.UTF_8).forEach { line ->
+        CalculatorPersistence.load(memoryFile) { savedLines ->
+            savedLines.forEach { line ->
                 val parts = line.split('\t', limit = 2)
                 if (parts.size != 2) return@forEach
                 val settingIndex = settings.indexOfFirst { it.category == parts[0] }
@@ -147,20 +145,16 @@ object ModeSettingsMemory {
     }
 
     private fun save() {
-        runCatching {
-            Files.createDirectories(memoryFile.parent)
-            Files.write(
-                memoryFile,
-                settings.indices.map { index -> "${settings[index].category}\t${selectedOption(index)}" },
-                StandardCharsets.UTF_8
-            )
+        CalculatorPersistence.save(memoryFile) {
+            settings.indices.map { index -> "${settings[index].category}\t${selectedOption(index)}" }
         }
     }
 
     private const val NUMBER_DISPLAY_INDEX = 0
     private const val DECIMAL_DISPLAY_INDEX = 1
     private const val ANGLE_UNIT_INDEX = 2
-    private const val COMPLEX_NUMBER_FORMAT_INDEX = 5
-    private const val ANSWERS_INDEX = 8
+    private const val COMPLEX_NUMBER_FORMAT_INDEX = 4
+    private const val ANSWERS_INDEX = 6
     private const val FLOAT_SIGNIFICANT_DIGITS = 12
+    private val NORMAL_SCIENTIFIC_THRESHOLD = BigDecimal("0.001")
 }

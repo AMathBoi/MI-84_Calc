@@ -1,7 +1,5 @@
 package net.amathboi.mi84mod.client.calculator
 
-import java.nio.charset.StandardCharsets
-import java.nio.file.Files
 import java.nio.file.Path
 import net.fabricmc.loader.api.FabricLoader
 
@@ -55,9 +53,7 @@ object ZoomMemory {
     }
 
     private fun load() {
-        if (!Files.exists(memoryFile)) return
-        runCatching {
-            val lines = Files.readAllLines(memoryFile, StandardCharsets.UTF_8)
+        CalculatorPersistence.load(memoryFile) { lines ->
             lines.firstOrNull()?.toIntOrNull()?.let { savedDenominator ->
                 denominatorChoices.indexOf(savedDenominator)
                     .takeIf { it >= 0 }
@@ -70,13 +66,8 @@ object ZoomMemory {
     }
 
     private fun save() {
-        runCatching {
-            Files.createDirectories(memoryFile.parent)
-            Files.write(
-                memoryFile,
-                listOf(selectedDenominator().toString()) + storedWindow.orEmpty(),
-                StandardCharsets.UTF_8
-            )
+        CalculatorPersistence.save(memoryFile) {
+            listOf(selectedDenominator().toString()) + storedWindow.orEmpty()
         }
     }
 }

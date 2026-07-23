@@ -47,6 +47,54 @@ dependencies {
     modImplementation(
             "net.fabricmc:fabric-language-kotlin:${providers.gradleProperty("fabric_kotlin_version").get()}"
     )
+
+    testImplementation(kotlin("test-junit5"))
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+sourceSets.test {
+    compileClasspath += sourceSets.getByName("client").output
+    runtimeClasspath += sourceSets.getByName("client").output
+}
+
+val testWorkingDirectory = layout.buildDirectory.dir("test-run")
+tasks.test {
+    useJUnitPlatform()
+    val workingDirectory = testWorkingDirectory.get().asFile
+    doFirst { workingDirectory.mkdirs() }
+    workingDir(workingDirectory)
+}
+
+val verifyCalculatorArchitecture by tasks.registering {
+    group = "verification"
+    description = "Checks the calculator's Minecraft boundary and required maintenance documents."
+    val calculatorSource = file("src/client/kotlin/net/amathboi/mi84mod/client/calculator")
+    val nonMinecraftLayers = listOf("input", "controller", "ui")
+        .map { calculatorSource.resolve(it) }
+    val widgetSource = calculatorSource.resolve("CalculatorWidget.kt")
+    val architectureDocument = file("ARCHITECTURE.md")
+    val buttonMatrix = file("BUTTON_MATRIX.md")
+    inputs.files(fileTree(calculatorSource), architectureDocument, buttonMatrix)
+
+    doLast {
+        nonMinecraftLayers.flatMap { directory ->
+            directory.walkTopDown().filter { it.isFile && it.extension == "kt" }.toList()
+        }.forEach { sourceFile ->
+            check("net.minecraft" !in sourceFile.readText()) {
+                "${sourceFile.relativeTo(projectDir)} crosses the documented Minecraft boundary"
+            }
+        }
+        check(widgetSource.readLines().size <= 300) {
+            "CalculatorWidget.kt must remain a thin adapter; extract behavior before it exceeds 300 lines"
+        }
+        check(architectureDocument.isFile && buttonMatrix.isFile) {
+            "ARCHITECTURE.md and BUTTON_MATRIX.md are required maintenance contracts"
+        }
+    }
+}
+
+tasks.check {
+    dependsOn(verifyCalculatorArchitecture)
 }
 
 tasks.processResources {

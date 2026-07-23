@@ -2,9 +2,8 @@ package net.amathboi.mi84mod.client.calculator
 
 import net.fabricmc.loader.api.FabricLoader
 import java.math.BigDecimal
+import java.math.MathContext
 import java.math.RoundingMode
-import java.nio.charset.StandardCharsets
-import java.nio.file.Files
 import java.nio.file.Path
 
 /** Persistent calculator input and evaluated history. */
@@ -88,11 +87,11 @@ object CalculatorDisplayMemory {
         replaceTokenAtCursor(operator.toString())
     }
 
-    /** Adds a decimal point to the current number, supplying a leading zero when needed. */
+    /**
+     * Adds a decimal point, supplying a leading zero when needed. A second decimal remains visible
+     * and is reported as a syntax error on submission instead of being silently ignored.
+     */
     fun appendDecimalPoint() {
-        val operand = currentEntry.substring(currentOperandStart(), cursor)
-        if (operand.contains('.')) return
-
         val leadingZeroNeeded = canStartOperandAtCursor()
         replaceTokenAtCursor(if (leadingZeroNeeded) "0." else ".")
     }
@@ -123,7 +122,7 @@ object CalculatorDisplayMemory {
     }
 
     fun appendOpenParenthesis() {
-        if (canStartOperandAtCursor()) {
+        if (canInsertPrimaryAtCursor()) {
             appendText("(")
         }
     }
@@ -136,7 +135,7 @@ object CalculatorDisplayMemory {
 
     /** Adds the calculator's X variable wherever a new operand may begin. */
     fun appendXVariable() {
-        if (canStartOperandAtCursor()) appendText("X")
+        if (canInsertPrimaryAtCursor()) appendText("X")
     }
 
     /** Adds a store operator after an expression; the destination is selected with the X key. */
@@ -147,7 +146,7 @@ object CalculatorDisplayMemory {
     /** Adds a scientific function and its opening parenthesis when an operand may begin. */
     fun appendFunction(function: String) {
         require(function in FUNCTIONS) { "Unsupported calculator function: $function" }
-        if (canStartOperandAtCursor()) {
+        if (canInsertPrimaryAtCursor()) {
             appendText("$function(")
         }
     }
@@ -179,7 +178,7 @@ object CalculatorDisplayMemory {
         if (currentEntry.isEmpty()) return
 
         if (currentEntry.contains(',')) {
-            submittedEntries += SubmittedEntry(currentEntry, SYNTAX_ERROR)
+            recordSubmission(SubmittedEntry(currentEntry, SYNTAX_ERROR))
             currentEntry = ""
             cursor = 0
             save()
@@ -188,7 +187,7 @@ object CalculatorDisplayMemory {
 
         if (currentEntry.contains(STORE_OPERATOR)) {
             val result = evaluateAssignment(currentEntry)
-            submittedEntries += SubmittedEntry(currentEntry, result.display, result.value, result.imaginaryValue)
+            recordSubmission(SubmittedEntry(currentEntry, result.display, result.value, result.imaginaryValue))
             currentEntry = ""
             cursor = 0
             save()
@@ -201,7 +200,7 @@ object CalculatorDisplayMemory {
         } else {
             evaluate(completedEntry)
         }
-        submittedEntries += SubmittedEntry(currentEntry, result.display, result.value, result.imaginaryValue)
+        recordSubmission(SubmittedEntry(currentEntry, result.display, result.value, result.imaginaryValue))
         currentEntry = ""
         cursor = 0
         save()
@@ -295,19 +294,17 @@ object CalculatorDisplayMemory {
     private fun format(value: BigDecimal): String = ModeSettingsMemory.formatNumber(value)
 
     private fun complexEvaluationResult(value: ComplexNumber): EvaluationResult {
-        val normalizedReal = normalizeComplexPart(value.real)
-        val normalizedImaginary = normalizeComplexPart(value.imaginary)
-        if (normalizedImaginary == 0.0) {
-            val realValue = BigDecimal.valueOf(normalizedReal)
+        val rawRealValue = BigDecimal.valueOf(value.real)
+        if (value.imaginary == 0.0) {
+            val realValue = BigDecimal.valueOf(normalizeComplexUnit(value.real))
             return EvaluationResult(format(realValue), realValue)
         }
 
-        val realValue = BigDecimal.valueOf(normalizedReal)
-        val imaginaryValue = BigDecimal.valueOf(normalizedImaginary)
+        val (displayReal, displayImaginary) = normalizeComplexDisplayParts(value)
         return EvaluationResult(
-            formatRectangularComplex(normalizedReal, normalizedImaginary),
-            realValue,
-            imaginaryValue
+            formatRectangularComplex(displayReal, displayImaginary),
+            rawRealValue,
+            BigDecimal.valueOf(value.imaginary)
         )
     }
 
@@ -328,8 +325,21 @@ object CalculatorDisplayMemory {
         }
     }
 
-    private fun normalizeComplexPart(value: Double): Double = when {
-        kotlin.math.abs(value) < COMPLEX_ZERO_EPSILON -> 0.0
+    /**
+     * Removes only a component that is tiny relative to the other component for display. Raw
+     * complex values remain untouched so a legitimate small standalone value survives in Ans.
+     */
+    private fun normalizeComplexDisplayParts(value: ComplexNumber): Pair<Double, Double> {
+        var real = normalizeComplexUnit(value.real)
+        var imaginary = normalizeComplexUnit(value.imaginary)
+        if (real != 0.0 && imaginary != 0.0) {
+            if (kotlin.math.abs(real) < kotlin.math.abs(imaginary) * COMPLEX_ZERO_EPSILON) real = 0.0
+            if (kotlin.math.abs(imaginary) < kotlin.math.abs(real) * COMPLEX_ZERO_EPSILON) imaginary = 0.0
+        }
+        return real to imaginary
+    }
+
+    private fun normalizeComplexUnit(value: Double): Double = when {
         kotlin.math.abs(value - 1.0) < COMPLEX_ZERO_EPSILON -> 1.0
         kotlin.math.abs(value + 1.0) < COMPLEX_ZERO_EPSILON -> -1.0
         else -> value
@@ -377,6 +387,14 @@ object CalculatorDisplayMemory {
 
     private fun hasLatestAnswer(): Boolean = latestValidEntry() != null
 
+    private fun recordSubmission(entry: SubmittedEntry) {
+        while (submittedEntries.size >= MAX_HISTORY_ENTRIES) {
+            submittedEntries.removeAt(0)
+            firstVisibleSubmittedIndex = (firstVisibleSubmittedIndex - 1).coerceAtLeast(0)
+        }
+        submittedEntries += entry
+    }
+
     private fun appendPower(exponent: String) {
         if (endsOperandBeforeCursor()) appendText("^$exponent")
     }
@@ -410,6 +428,10 @@ object CalculatorDisplayMemory {
     private fun canStartOperandAtCursor(): Boolean =
         cursor == 0 || currentEntry[cursor - 1] in BINARY_OPERATORS ||
             currentEntry[cursor - 1] == '(' || currentEntry.substring(0, cursor).endsWith(STORE_OPERATOR)
+
+    /** Primary tokens may also follow an operand directly because the parser supports implicit multiplication. */
+    private fun canInsertPrimaryAtCursor(): Boolean =
+        canStartOperandAtCursor() || endsOperandBeforeCursor()
 
     private fun endsOperandBeforeCursor(): Boolean =
         cursor > 0 && currentEntry[cursor - 1].let { it.isDigit() || it == ')' || it == 'X' || it == COMPLEX_UNIT }
@@ -451,12 +473,18 @@ object CalculatorDisplayMemory {
         for (index in cursor - 1 downTo 0) {
             when (currentEntry[index]) {
                 '+', '*', '/', '^', '(' -> return index + 1
-                '-' -> if (index > 0 && (currentEntry[index - 1].isDigit() || currentEntry[index - 1] == ')')) {
+                '-' -> if (index > 0 && endsOperandAt(index)) {
                     return index + 1
                 }
             }
         }
         return 0
+    }
+
+    private fun endsOperandAt(endExclusive: Int): Boolean {
+        val previous = currentEntry.getOrNull(endExclusive - 1) ?: return false
+        return previous.isDigit() || previous == '.' || previous == ')' || previous == 'X' ||
+            previous == COMPLEX_UNIT || currentEntry.substring(0, endExclusive).endsWith("Ans")
     }
 
     private fun functionTokenStartingAt(position: Int): String? =
@@ -468,10 +496,7 @@ object CalculatorDisplayMemory {
         }?.plus("(")
 
     private fun load() {
-        if (!Files.exists(memoryFile)) return
-
-        runCatching {
-            val savedLines = Files.readAllLines(memoryFile, StandardCharsets.UTF_8)
+        CalculatorPersistence.load(memoryFile) { savedLines ->
             if (savedLines.firstOrNull()?.startsWith(CURRENT_PREFIX) == true) {
                 currentEntry = savedLines.first().removePrefix(CURRENT_PREFIX).take(MAX_CHARACTERS)
                 savedLines.firstOrNull { it.startsWith(X_PREFIX) }?.removePrefix(X_PREFIX)?.let { savedX ->
@@ -491,7 +516,7 @@ object CalculatorDisplayMemory {
                                 }
                             }
                         }
-                }
+                }.takeLast(MAX_HISTORY_ENTRIES)
             } else {
                 // Read the number-only format used before arithmetic support was added.
                 currentEntry = savedLines.firstOrNull()?.take(MAX_CHARACTERS)?.filter(Char::isDigit).orEmpty()
@@ -499,22 +524,18 @@ object CalculatorDisplayMemory {
                     .map { it.take(MAX_CHARACTERS).filter(Char::isDigit) }
                     .filter(String::isNotEmpty)
                     .map { SubmittedEntry(it, it) }
+                    .takeLast(MAX_HISTORY_ENTRIES)
             }
         }
     }
 
     private fun save() {
-        runCatching {
-            Files.createDirectories(memoryFile.parent)
-            Files.write(
-                memoryFile,
-                listOf(CURRENT_PREFIX + currentEntry, X_PREFIX + xValue.toPlainString()) + submittedEntries.map {
-                    ENTRY_PREFIX + it.input + '\t' + it.result + '\t' +
-                        (it.rawResult?.toPlainString() ?: "") + '\t' +
-                        (it.rawImaginaryResult?.toPlainString() ?: "")
-                },
-                StandardCharsets.UTF_8
-            )
+        CalculatorPersistence.save(memoryFile) {
+            listOf(CURRENT_PREFIX + currentEntry, X_PREFIX + xValue.toPlainString()) + submittedEntries.map {
+                ENTRY_PREFIX + it.input + '\t' + it.result + '\t' +
+                    (it.rawResult?.toPlainString() ?: "") + '\t' +
+                    (it.rawImaginaryResult?.toPlainString() ?: "")
+            }
         }
     }
 
@@ -523,11 +544,18 @@ object CalculatorDisplayMemory {
     private const val ENTRY_PREFIX = "entry\t"
     private const val SYNTAX_ERROR = "Error: Syntax"
     private const val DIVISION_BY_ZERO_ERROR = "Error: Division by zero"
+    private const val RESULT_TOO_LARGE_ERROR = "Error: Result too large"
     private const val BINARY_OPERATORS = "+-*/^"
     private const val STORE_OPERATOR = "->"
     private const val COMPLEX_UNIT = 'i'
     private const val COMPLEX_ZERO_EPSILON = 1.0e-12
+    private const val MAX_POWER_RESULT_CHARACTERS = 4_096L
+    private const val MAX_HISTORY_ENTRIES = 1_000
     private val FUNCTIONS = setOf("sin", "cos", "tan", "log", "ln")
+    private val TRIG_FUNCTIONS = setOf("sin", "cos", "tan")
+    private val QUARTER_TURN_DEGREES = BigDecimal("90")
+    private val FOUR = BigDecimal("4")
+    private val CALCULATION_CONTEXT = MathContext(34, RoundingMode.HALF_UP)
 
     private class CalculatorEvaluationException(message: String) : IllegalArgumentException(message)
 
@@ -548,28 +576,32 @@ object CalculatorDisplayMemory {
         private fun parseSum(): BigDecimal {
             var result = parseProduct()
             while (index < expression.length && expression[index] in "+-") {
-                result = if (expression[index++] == '+') result + parseProduct() else result - parseProduct()
+                result = if (expression[index++] == '+') {
+                    result.add(parseProduct(), CALCULATION_CONTEXT)
+                } else {
+                    result.subtract(parseProduct(), CALCULATION_CONTEXT)
+                }
             }
             return result
         }
 
         private fun parseProduct(): BigDecimal {
-            var result = parsePower()
+            var result = parseUnary()
             while (index < expression.length) {
                 result = when {
                     expression[index] == '*' -> {
                         index++
-                        result * parsePower()
+                        result.multiply(parseUnary(), CALCULATION_CONTEXT)
                     }
                     expression[index] == '/' -> {
                         index++
-                        val divisor = parsePower()
+                        val divisor = parseUnary()
                         if (divisor.compareTo(BigDecimal.ZERO) == 0) {
                             throw CalculatorEvaluationException(DIVISION_BY_ZERO_ERROR)
                         }
-                        result.divide(divisor, 10, RoundingMode.HALF_UP)
+                        result.divide(divisor, CALCULATION_CONTEXT)
                     }
-                    startsPrimaryAt(index) -> result * parsePower()
+                    startsPrimaryAt(index) -> result.multiply(parseUnary(), CALCULATION_CONTEXT)
                     else -> return result
                 }
             }
@@ -586,32 +618,64 @@ object CalculatorDisplayMemory {
                 )
 
         private fun parsePower(): BigDecimal {
-            var result = parseUnary()
-            if (index < expression.length && expression[index] == '^') {
+            val result = parsePrimary()
+            return if (index < expression.length && expression[index] == '^') {
                 index++
-                val exponent = parsePower()
+                val exponent = parseUnary()
                 if (result.compareTo(BigDecimal.ZERO) == 0 && exponent.compareTo(BigDecimal.ZERO) < 0) {
                     throw CalculatorEvaluationException(DIVISION_BY_ZERO_ERROR)
                 }
-                result = if (exponent.scale() <= 0) {
-                    val integerExponent = exponent.intValueExact()
-                    if (integerExponent >= 0) result.pow(integerExponent) else {
-                        BigDecimal.ONE.divide(result.pow(-integerExponent), 10, RoundingMode.HALF_UP)
-                    }
+                if (exponent.stripTrailingZeros().scale() <= 0) {
+                    integerPower(result, exponent)
                 } else {
-                    BigDecimal.valueOf(Math.pow(result.toDouble(), exponent.toDouble()))
+                    val powered = Math.pow(result.toDouble(), exponent.toDouble())
+                    if (!powered.isFinite()) throw CalculatorEvaluationException(RESULT_TOO_LARGE_ERROR)
+                    BigDecimal.valueOf(powered)
                 }
+            } else {
+                result
             }
-            return result
         }
 
         private fun parseUnary(): BigDecimal =
             if (index < expression.length && expression[index] == '-') {
                 index++
-                parseUnary().negate()
+                parseUnary().negate(CALCULATION_CONTEXT)
             } else {
-                parsePrimary()
+                parsePower()
             }
+
+        private fun integerPower(base: BigDecimal, exponent: BigDecimal): BigDecimal {
+            val integerExponent = try {
+                exponent.intValueExact()
+            } catch (_: ArithmeticException) {
+                throw CalculatorEvaluationException(RESULT_TOO_LARGE_ERROR)
+            }
+            if (base.compareTo(BigDecimal.ZERO) == 0) return BigDecimal.ZERO
+            if (base.compareTo(BigDecimal.ONE) == 0) return BigDecimal.ONE
+            if (base.compareTo(BigDecimal.ONE.negate()) == 0) {
+                return if (integerExponent % 2 == 0) BigDecimal.ONE else BigDecimal.ONE.negate()
+            }
+
+            val magnitude = kotlin.math.abs(integerExponent.toLong())
+            val estimatedPrecision = base.precision().toLong() * magnitude
+            val estimatedScale = base.scale().toLong() * magnitude
+            val estimatedPlainCharacters = if (estimatedScale >= 0L) {
+                maxOf(estimatedPrecision, estimatedScale) + 2L
+            } else {
+                estimatedPrecision - estimatedScale + 1L
+            }
+            if (estimatedPlainCharacters > MAX_POWER_RESULT_CHARACTERS) {
+                throw CalculatorEvaluationException(RESULT_TOO_LARGE_ERROR)
+            }
+
+            val powered = base.pow(magnitude.toInt(), CALCULATION_CONTEXT)
+            return if (integerExponent >= 0) {
+                powered
+            } else {
+                BigDecimal.ONE.divide(powered, CALCULATION_CONTEXT)
+            }
+        }
 
         private fun parsePrimary(): BigDecimal {
             if (expression.startsWith("Ans", index)) {
@@ -654,7 +718,8 @@ object CalculatorDisplayMemory {
 
         private fun evaluateFunction(function: String, argument: BigDecimal): BigDecimal {
             val value = argument.toDouble()
-            val angle = if (ModeSettingsMemory.usesDegrees()) Math.toRadians(value) else value
+            val usesDegrees = ModeSettingsMemory.usesDegrees()
+            val angle = if (usesDegrees) Math.toRadians(value) else value
             val result = when (function) {
                 "sin" -> Math.sin(angle)
                 "cos" -> Math.cos(angle)
@@ -663,8 +728,36 @@ object CalculatorDisplayMemory {
                 "ln" -> Math.log(value)
                 else -> error("Unsupported calculator function: $function")
             }
-            check(result.isFinite()) { "Function result is outside the supported range" }
-            return BigDecimal.valueOf(result)
+            val normalizedResult = normalizeDegreeTrigIdentity(function, argument, result, usesDegrees)
+            check(normalizedResult.isFinite()) { "Function result is outside the supported range" }
+            return BigDecimal.valueOf(normalizedResult)
+        }
+
+        private fun normalizeDegreeTrigIdentity(
+            function: String,
+            degrees: BigDecimal,
+            result: Double,
+            usesDegrees: Boolean
+        ): Double {
+            if (!usesDegrees || function !in TRIG_FUNCTIONS) return result
+            val (quarterTurns, remainder) = degrees.divideAndRemainder(QUARTER_TURN_DEGREES)
+            if (remainder.compareTo(BigDecimal.ZERO) != 0) return result
+            val quadrant = Math.floorMod(quarterTurns.remainder(FOUR).toInt(), 4)
+
+            return when (function) {
+                "sin" -> when (quadrant) {
+                    1 -> 1.0
+                    3 -> -1.0
+                    else -> 0.0
+                }
+                "cos" -> when (quadrant) {
+                    0 -> 1.0
+                    2 -> -1.0
+                    else -> 0.0
+                }
+                "tan" -> if (quadrant % 2 == 0) 0.0 else result
+                else -> result
+            }
         }
     }
 }

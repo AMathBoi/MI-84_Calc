@@ -1,8 +1,6 @@
 package net.amathboi.mi84mod.client.calculator
 
 import net.fabricmc.loader.api.FabricLoader
-import java.nio.charset.StandardCharsets
-import java.nio.file.Files
 import java.nio.file.Path
 
 /** Persistent graph equations and their calculator-style forward edit cursors. */
@@ -78,9 +76,8 @@ object YEqualsMemory {
     }
 
     private fun load() {
-        if (!Files.exists(memoryFile)) return
-        runCatching {
-            Files.readAllLines(memoryFile, StandardCharsets.UTF_8)
+        CalculatorPersistence.load(memoryFile) { savedLines ->
+            savedLines
                 .take(equations.size)
                 .forEachIndexed { index, savedEquation ->
                     equations[index] = savedEquation.take(MAX_EXPRESSION_LENGTH)
@@ -89,9 +86,6 @@ object YEqualsMemory {
     }
 
     private fun save() {
-        runCatching {
-            Files.createDirectories(memoryFile.parent)
-            Files.write(memoryFile, equations, StandardCharsets.UTF_8)
-        }
+        CalculatorPersistence.save(memoryFile) { equations.toList() }
     }
 }

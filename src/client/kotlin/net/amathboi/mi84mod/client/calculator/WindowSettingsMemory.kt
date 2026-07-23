@@ -1,8 +1,7 @@
 package net.amathboi.mi84mod.client.calculator
 
 import net.fabricmc.loader.api.FabricLoader
-import java.nio.charset.StandardCharsets
-import java.nio.file.Files
+import kotlin.math.abs
 import java.nio.file.Path
 
 /** Persistent graph-window settings. They are stored now for use by graphing later. */
@@ -44,7 +43,10 @@ object WindowSettingsMemory {
         save()
     }
 
-    /** Replaces the seven fields that define the plotted graph while retaining ΔX and TraceStep. */
+    /**
+     * Replaces the seven plotted-graph fields while retaining ΔX and TraceStep. Invalid,
+     * unrepresentable, or excessively large bounds leave the previous window untouched.
+     */
     fun setGraphWindow(
         xMin: String,
         xMax: String,
@@ -53,13 +55,28 @@ object WindowSettingsMemory {
         yMax: String,
         yScale: String,
         xResolution: String = "1"
-    ) {
+    ): Boolean {
         val graphValues = listOf(xMin, xMax, xScale, yMin, yMax, yScale, xResolution)
+        if (graphValues.any { it.length > MAX_VALUE_LENGTH }) return false
+
+        val numericBounds = listOf(xMin, xMax, yMin, yMax).map { bound ->
+            bound.toDoubleOrNull() ?: CalculatorDisplayMemory.evaluateForGraph(bound, 0.0) ?: return false
+        }
+        if (!supportsGraphBounds(numericBounds[0], numericBounds[1], numericBounds[2], numericBounds[3])) return false
+
         graphValues.forEachIndexed { index, value ->
-            values[index] = value.take(MAX_VALUE_LENGTH)
+            values[index] = value
             cursors[index] = values[index].length
         }
         save()
+        return true
+    }
+
+    fun supportsGraphBounds(xMin: Double, xMax: Double, yMin: Double, yMax: Double): Boolean {
+        val bounds = listOf(xMin, xMax, yMin, yMax)
+        return bounds.all { it.isFinite() && abs(it) <= MAX_ABSOLUTE_BOUND } &&
+            xMax - xMin >= MINIMUM_BOUND_SPAN &&
+            yMax - yMin >= MINIMUM_BOUND_SPAN
     }
 
     fun selectPrevious() = select(selectedIndex - 1)
@@ -107,18 +124,17 @@ object WindowSettingsMemory {
     }
 
     private fun load() {
-        if (!Files.exists(memoryFile)) return
-        runCatching {
-            Files.readAllLines(memoryFile, StandardCharsets.UTF_8)
+        CalculatorPersistence.load(memoryFile) { savedLines ->
+            savedLines
                 .take(labels.size)
                 .forEachIndexed { index, savedValue -> values[index] = savedValue.take(MAX_VALUE_LENGTH) }
         }
     }
 
     private fun save() {
-        runCatching {
-            Files.createDirectories(memoryFile.parent)
-            Files.write(memoryFile, values, StandardCharsets.UTF_8)
-        }
+        CalculatorPersistence.save(memoryFile) { values.toList() }
     }
+
+    private const val MAX_ABSOLUTE_BOUND = 1.0e12
+    private const val MINIMUM_BOUND_SPAN = 1.0e-12
 }
