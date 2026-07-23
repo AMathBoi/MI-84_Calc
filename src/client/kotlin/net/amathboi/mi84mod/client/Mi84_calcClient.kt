@@ -3,7 +3,6 @@ package net.amathboi.mi84mod.client
 import net.amathboi.mi84mod.client.calculator.CalculatorWidget
 import net.amathboi.mi84mod.client.calculator.CalculatorPosition
 import net.fabricmc.api.ClientModInitializer
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents
 import net.fabricmc.fabric.api.client.screen.v1.ScreenKeyboardEvents
@@ -17,7 +16,10 @@ import org.lwjgl.glfw.GLFW
 
 object Mi84_calcClient : ClientModInitializer {
     private lateinit var resetCalculatorPositionKey: KeyMapping
+    private lateinit var toggleCalculatorKey: KeyMapping
+    private lateinit var toggleCalculatorButtonKey: KeyMapping
     private var activeCalculator: CalculatorWidget? = null
+    private var activeCalculatorButton: Button? = null
 
     override fun onInitializeClient() {
         resetCalculatorPositionKey = KeyBindingHelper.registerKeyBinding(
@@ -29,22 +31,46 @@ object Mi84_calcClient : ClientModInitializer {
             )
         )
 
-        ClientTickEvents.END_CLIENT_TICK.register {
-            while (resetCalculatorPositionKey.consumeClick()) {
-                resetCalculatorPosition()
-            }
-        }
+        toggleCalculatorKey = KeyBindingHelper.registerKeyBinding(
+            KeyMapping(
+                "key.mi84_calc.toggle_calculator",
+                InputConstants.Type.KEYSYM,
+                GLFW.GLFW_KEY_H,
+                "key.categories.mi84_calc"
+            )
+        )
+
+        toggleCalculatorButtonKey = KeyBindingHelper.registerKeyBinding(
+            KeyMapping(
+                "key.mi84_calc.toggle_calculator_button",
+                InputConstants.Type.KEYSYM,
+                GLFW.GLFW_KEY_K,
+                "key.categories.mi84_calc"
+            )
+        )
 
         // listens for new gui screen being opened
         ScreenEvents.AFTER_INIT.register { client, screen, i, j ->
             // only add button to inventory screen
             if (screen is InventoryScreen) {
                 ScreenKeyboardEvents.allowKeyPress(screen).register { _, key, scancode, _ ->
-                    if (resetCalculatorPositionKey.matches(key, scancode)) {
-                        resetCalculatorPosition()
-                        false
-                    } else {
-                        true
+                    when {
+                        resetCalculatorPositionKey.matches(key, scancode) -> {
+                            resetCalculatorPosition()
+                            false
+                        }
+
+                        toggleCalculatorKey.matches(key, scancode) -> {
+                            activeCalculator?.let { it.visible = !it.visible }
+                            false
+                        }
+
+                        toggleCalculatorButtonKey.matches(key, scancode) -> {
+                            activeCalculatorButton?.let { it.visible = !it.visible }
+                            false
+                        }
+
+                        else -> true
                     }
                 }
 
@@ -64,6 +90,7 @@ object Mi84_calcClient : ClientModInitializer {
                             { _ -> calculator.visible = !calculator.visible }
                         )
                         .build()
+                activeCalculatorButton = calcButton
 
                 // sets position and dimensions
                 calcButton.x = xPos

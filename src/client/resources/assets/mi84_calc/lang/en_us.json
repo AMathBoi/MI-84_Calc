@@ -1,4 +1,6 @@
 {
   "key.mi84_calc.reset_calculator_position": "Reset calculator position",
+  "key.mi84_calc.toggle_calculator": "Toggle calculator visibility",
+  "key.mi84_calc.toggle_calculator_button": "Toggle calculator button visibility",
   "key.categories.mi84_calc": "MI-84 Calculator"
 }
