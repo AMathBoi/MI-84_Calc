@@ -68,7 +68,27 @@ internal data class ComplexNumber(val real: Double, val imaginary: Double = 0.0)
         -sin(real) * sinh(imaginary)
     )
 
+    fun squareRoot() = pow(ComplexNumber(0.5))
+
+    fun inverseSine(): ComplexNumber {
+        val insideLogarithm =
+            IMAGINARY_UNIT * this + (ComplexNumber(1.0) - this * this).squareRoot()
+        return -(IMAGINARY_UNIT * insideLogarithm.logarithm())
+    }
+
+    fun inverseCosine() = ComplexNumber(Math.PI / 2.0) - inverseSine()
+
+    fun inverseTangent(): ComplexNumber {
+        val left = (ComplexNumber(1.0) - IMAGINARY_UNIT * this).logarithm()
+        val right = (ComplexNumber(1.0) + IMAGINARY_UNIT * this).logarithm()
+        return ComplexNumber(0.0, 0.5) * (left - right)
+    }
+
     fun isFinite(): Boolean = real.isFinite() && imaginary.isFinite()
+
+    private companion object {
+        val IMAGINARY_UNIT = ComplexNumber(0.0, 1.0)
+    }
 }
 
 internal class ComplexEvaluationException(message: String) : IllegalArgumentException(message)
@@ -77,7 +97,7 @@ internal class ComplexEvaluationException(message: String) : IllegalArgumentExce
 internal class ComplexExpressionEvaluator(
     private val expression: String,
     private val previousAnswer: ComplexNumber?,
-    private val xValue: Double,
+    private val variableValues: Map<CalculatorVariable, ComplexNumber>,
     private val degrees: Boolean
 ) {
     private var index = 0
@@ -119,8 +139,10 @@ internal class ComplexExpressionEvaluator(
     private fun startsPrimaryAt(position: Int): Boolean =
         position < expression.length && (
             expression[position].isDigit() || expression[position] == '.' ||
-                expression[position] == '(' || expression[position] == 'X' ||
-                expression[position] == 'i' || expression.startsWith("Ans", position) ||
+                expression[position] == '(' ||
+                CalculatorVariable.fromSymbol(expression[position]) != null ||
+                expression[position] == 'i' || expression[position] == PI_TOKEN ||
+                expression[position] == EULER_TOKEN || expression.startsWith(ANSWER_TOKEN, position) ||
                 FUNCTIONS.any { expression.startsWith(it, position) }
             )
 
@@ -143,17 +165,27 @@ internal class ComplexExpressionEvaluator(
         }
 
     private fun parsePrimary(): ComplexNumber {
-        if (expression.startsWith("Ans", index)) {
-            index += "Ans".length
+        if (expression.startsWith(ANSWER_TOKEN, index)) {
+            index += ANSWER_TOKEN.length
             return checkNotNull(previousAnswer) { "No previous answer is available" }
         }
-        if (index < expression.length && expression[index] == 'X') {
-            index++
-            return ComplexNumber(xValue)
+        if (index < expression.length) {
+            CalculatorVariable.fromSymbol(expression[index])?.let { variable ->
+                index++
+                return variableValues.getValue(variable)
+            }
         }
         if (index < expression.length && expression[index] == 'i') {
             index++
             return ComplexNumber(0.0, 1.0)
+        }
+        if (index < expression.length && expression[index] == PI_TOKEN) {
+            index++
+            return ComplexNumber(Math.PI)
+        }
+        if (index < expression.length && expression[index] == EULER_TOKEN) {
+            index++
+            return ComplexNumber(Math.E)
         }
 
         FUNCTIONS.firstOrNull { expression.startsWith(it, index) }?.let { function ->
@@ -176,10 +208,37 @@ internal class ComplexExpressionEvaluator(
             return result
         }
 
-        val start = index
-        while (index < expression.length && (expression[index].isDigit() || expression[index] == '.')) index++
-        check(start != index) { "Expected a number" }
-        return ComplexNumber(expression.substring(start, index).toDouble())
+        return parseNumber()
+    }
+
+    private fun parseNumber(): ComplexNumber {
+        val mantissaStart = index
+        while (index < expression.length && (expression[index].isDigit() || expression[index] == '.')) {
+            index++
+        }
+        check(mantissaStart != index) { "Expected a number" }
+        val mantissa = expression.substring(mantissaStart, index).toDouble()
+
+        if (!expression.startsWith(SCIENTIFIC_EXPONENT_TOKEN, index)) {
+            return ComplexNumber(mantissa)
+        }
+        index += SCIENTIFIC_EXPONENT_TOKEN.length
+        val negative = index < expression.length && expression[index] == '-'
+        if (negative) index++
+        val exponentStart = index
+        while (index < expression.length && expression[index].isDigit()) index++
+        check(exponentStart != index) { "Expected scientific exponent digits" }
+        check(index == expression.length || expression[index] != '.') {
+            "Scientific exponent must be an integer"
+        }
+
+        val magnitude = expression.substring(exponentStart, index).toIntOrNull()
+            ?: throw ComplexEvaluationException("Error: Result too large")
+        val exponent = if (negative) -magnitude else magnitude
+        if (exponent !in -MAX_SCIENTIFIC_EXPONENT..MAX_SCIENTIFIC_EXPONENT) {
+            throw ComplexEvaluationException("Error: Result too large")
+        }
+        return ComplexNumber(mantissa * Math.pow(10.0, exponent.toDouble()))
     }
 
     private fun evaluateFunction(function: String, argument: ComplexNumber): ComplexNumber {
@@ -194,14 +253,43 @@ internal class ComplexExpressionEvaluator(
             "tan" -> adjustedArgument.sine() / adjustedArgument.cosine()
             "log" -> argument.logarithm() / ComplexNumber(ln(10.0))
             "ln" -> argument.logarithm()
+            INVERSE_SINE -> argument.inverseSine()
+            INVERSE_COSINE -> argument.inverseCosine()
+            INVERSE_TANGENT -> argument.inverseTangent()
+            SQUARE_ROOT -> argument.squareRoot()
             else -> error("Unsupported calculator function: $function")
         }
-        check(result.isFinite()) { "Function result is outside the supported range" }
-        return result
+        val angleAdjustedResult = if (degrees && function in INVERSE_TRIG_FUNCTIONS) {
+            result * ComplexNumber(180.0 / Math.PI)
+        } else {
+            result
+        }
+        check(angleAdjustedResult.isFinite()) { "Function result is outside the supported range" }
+        return angleAdjustedResult
     }
 
     private companion object {
-        val FUNCTIONS = setOf("sin", "cos", "tan", "log", "ln")
+        const val ANSWER_TOKEN = "Ans"
+        const val SCIENTIFIC_EXPONENT_TOKEN = "EE"
+        const val PI_TOKEN = 'π'
+        const val EULER_TOKEN = 'e'
+        const val INVERSE_SINE = "sin⁻¹"
+        const val INVERSE_COSINE = "cos⁻¹"
+        const val INVERSE_TANGENT = "tan⁻¹"
+        const val SQUARE_ROOT = "sqrt"
+        const val MAX_SCIENTIFIC_EXPONENT = 4_000
+        val FUNCTIONS = listOf(
+            INVERSE_SINE,
+            INVERSE_COSINE,
+            INVERSE_TANGENT,
+            SQUARE_ROOT,
+            "sin",
+            "cos",
+            "tan",
+            "log",
+            "ln"
+        )
         val TRIG_FUNCTIONS = setOf("sin", "cos", "tan")
+        val INVERSE_TRIG_FUNCTIONS = setOf(INVERSE_SINE, INVERSE_COSINE, INVERSE_TANGENT)
     }
 }

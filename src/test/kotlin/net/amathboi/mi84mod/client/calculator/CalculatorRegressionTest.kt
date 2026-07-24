@@ -9,14 +9,24 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import net.amathboi.mi84mod.client.calculator.controller.CalculatorController
+import net.amathboi.mi84mod.client.calculator.controller.DispatchResult
+import net.amathboi.mi84mod.client.calculator.input.CalculatorInputEvent
+import net.amathboi.mi84mod.client.calculator.input.CalculatorKey
+import net.amathboi.mi84mod.client.calculator.input.ModifierLayer
+import net.amathboi.mi84mod.client.calculator.ui.CalculatorView
 
 class CalculatorRegressionTest {
     @BeforeTest
     fun resetCalculatorState() {
         resetDisplayMemory()
+        resetVariableMemory()
         resetModeMemory()
+        resetYEqualsMemory()
         WindowSettingsMemory.restore(DEFAULT_WINDOW)
+        setField(WindowSettingsMemory, "selectedIndex", 0)
     }
 
     @AfterTest
@@ -24,6 +34,8 @@ class CalculatorRegressionTest {
         Files.deleteIfExists(TEST_CONFIG.resolve("mi84_calc_display_memory.txt"))
         Files.deleteIfExists(TEST_CONFIG.resolve("mi84_calc_mode_settings.txt"))
         Files.deleteIfExists(TEST_CONFIG.resolve("mi84_calc_window_settings.txt"))
+        Files.deleteIfExists(TEST_CONFIG.resolve("mi84_calc_y_equals_memory.txt"))
+        Files.deleteIfExists(TEST_CONFIG.resolve("mi84_calc_scalar_variables.txt"))
         Files.deleteIfExists(TEST_CONFIG.resolve("atomic-test.txt"))
     }
 
@@ -212,6 +224,478 @@ class CalculatorRegressionTest {
         assertTrue(CalculatorDisplayMemory.allSubmitted().last().rawResult!! > BigDecimal.ZERO)
     }
 
+    @Test
+    fun phaseOneSecondMappingsInsertTypedTokensAndConsumeTheModifier() {
+        val controller = CalculatorController()
+        val mappings = listOf(
+            CalculatorKey.NEGATIVE to "Ans",
+            CalculatorKey.DECIMAL to "i",
+            CalculatorKey.POWER to "π",
+            CalculatorKey.DIVIDE to "e",
+            CalculatorKey.SIN to "sin⁻¹(",
+            CalculatorKey.COS to "cos⁻¹(",
+            CalculatorKey.TAN to "tan⁻¹(",
+            CalculatorKey.LOG to "10^(",
+            CalculatorKey.LN to "e^(",
+            CalculatorKey.SQUARE to "sqrt("
+        )
+
+        mappings.forEach { (key, expected) ->
+            CalculatorDisplayMemory.clearCurrent()
+            controller.dispatch(CalculatorInputEvent(CalculatorKey.SECOND))
+            val result = controller.dispatch(CalculatorInputEvent(key))
+            assertIs<DispatchResult.Handled>(result)
+            assertEquals(ModifierLayer.NORMAL, controller.state.modifier)
+            assertEquals(expected, CalculatorDisplayMemory.current())
+        }
+
+        CalculatorDisplayMemory.clearCurrent()
+        CalculatorDisplayMemory.appendDigit('1')
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.SECOND))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.COMMA))
+        assertEquals("1EE", CalculatorDisplayMemory.current())
+        assertEquals(ModifierLayer.NORMAL, controller.state.modifier)
+    }
+
+    @Test
+    fun phaseOneTokensRouteThroughYEqualsAndWindowEditors() {
+        val controller = CalculatorController()
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.Y_EQUALS))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.SECOND))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.POWER))
+        assertEquals("π", YEqualsMemory.equation(0))
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.WINDOW))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.SECOND))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.SIN))
+        assertEquals("-10sin⁻¹(", WindowSettingsMemory.value(0))
+    }
+
+    @Test
+    fun explicitAnsUsesTheLatestValidRawAnswerInNonemptyAndComplexExpressions() {
+        CalculatorDisplayMemory.appendAns()
+        CalculatorDisplayMemory.submit()
+        assertEquals("Error: Syntax", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        enter("7")
+        CalculatorDisplayMemory.submit()
+        enter("1/0")
+        CalculatorDisplayMemory.submit()
+
+        CalculatorDisplayMemory.appendRecalledHistory("2+")
+        CalculatorDisplayMemory.appendAns()
+        assertEquals("2+Ans", CalculatorDisplayMemory.current())
+        CalculatorDisplayMemory.submit()
+        assertEquals("9", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        selectRectangularComplexMode()
+        CalculatorDisplayMemory.appendImaginaryUnit()
+        CalculatorDisplayMemory.submit()
+        CalculatorDisplayMemory.appendAns()
+        CalculatorDisplayMemory.submit()
+        assertEquals("i", CalculatorDisplayMemory.allSubmitted().last().result)
+    }
+
+    @Test
+    fun imaginaryUnitRequiresRectangularComplexModeAndSupportsImplicitMultiplication() {
+        CalculatorDisplayMemory.appendImaginaryUnit()
+        CalculatorDisplayMemory.submit()
+        assertEquals("Error: Syntax", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        selectRectangularComplexMode()
+        CalculatorDisplayMemory.appendDigit('2')
+        CalculatorDisplayMemory.appendImaginaryUnit()
+        CalculatorDisplayMemory.submit()
+        val result = CalculatorDisplayMemory.allSubmitted().last()
+        assertEquals("2i", result.result)
+        assertEquals(2.0, result.rawImaginaryResult!!.toDouble())
+    }
+
+    @Test
+    fun constantsAndPowerTemplatesEvaluateWithOmittedClosingParentheses() {
+        CalculatorDisplayMemory.appendPi()
+        CalculatorDisplayMemory.submit()
+        assertEquals(Math.PI, CalculatorDisplayMemory.allSubmitted().last().rawResult!!.toDouble())
+
+        CalculatorDisplayMemory.appendDigit('2')
+        CalculatorDisplayMemory.appendPi()
+        CalculatorDisplayMemory.submit()
+        assertEquals(
+            2.0 * Math.PI,
+            CalculatorDisplayMemory.allSubmitted().last().rawResult!!.toDouble()
+        )
+
+        CalculatorDisplayMemory.appendDigit('2')
+        CalculatorDisplayMemory.appendOperator('+')
+        CalculatorDisplayMemory.appendPi()
+        CalculatorDisplayMemory.appendOperator('*')
+        CalculatorDisplayMemory.appendDigit('2')
+        CalculatorDisplayMemory.submit()
+        assertEquals(
+            2.0 + 2.0 * Math.PI,
+            CalculatorDisplayMemory.allSubmitted().last().rawResult!!.toDouble()
+        )
+
+        CalculatorDisplayMemory.appendEuler()
+        CalculatorDisplayMemory.submit()
+        assertEquals(Math.E, CalculatorDisplayMemory.allSubmitted().last().rawResult!!.toDouble())
+
+        CalculatorDisplayMemory.appendTenPower()
+        CalculatorDisplayMemory.appendDigit('2')
+        CalculatorDisplayMemory.submit()
+        assertEquals("100", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        CalculatorDisplayMemory.appendEulerPower()
+        CalculatorDisplayMemory.appendDigit('1')
+        CalculatorDisplayMemory.submit()
+        assertEquals(
+            Math.E,
+            CalculatorDisplayMemory.allSubmitted().last().rawResult!!.toDouble(),
+            1.0e-15
+        )
+    }
+
+    @Test
+    fun inverseTrigRespectsAngleModeAndUsesPrincipalComplexValues() {
+        CalculatorDisplayMemory.appendInverseSine()
+        CalculatorDisplayMemory.appendDigit('1')
+        CalculatorDisplayMemory.submit()
+        assertEquals(
+            Math.PI / 2.0,
+            CalculatorDisplayMemory.allSubmitted().last().rawResult!!.toDouble()
+        )
+
+        selectDegreeMode()
+        CalculatorDisplayMemory.appendInverseSine()
+        CalculatorDisplayMemory.appendDigit('1')
+        CalculatorDisplayMemory.submit()
+        assertEquals("90", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        CalculatorDisplayMemory.appendInverseCosine()
+        CalculatorDisplayMemory.toggleCurrentNumberSign()
+        CalculatorDisplayMemory.appendDigit('1')
+        CalculatorDisplayMemory.submit()
+        assertEquals("180", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        CalculatorDisplayMemory.appendInverseTangent()
+        CalculatorDisplayMemory.appendDigit('1')
+        CalculatorDisplayMemory.submit()
+        assertEquals("45", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        CalculatorDisplayMemory.appendInverseSine()
+        CalculatorDisplayMemory.appendDigit('2')
+        CalculatorDisplayMemory.submit()
+        assertEquals("Error: Syntax", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        selectRectangularComplexMode()
+        CalculatorDisplayMemory.appendInverseSine()
+        CalculatorDisplayMemory.appendDigit('2')
+        CalculatorDisplayMemory.submit()
+        val complexResult = CalculatorDisplayMemory.allSubmitted().last()
+        assertEquals(90.0, complexResult.rawResult!!.toDouble(), 1.0e-12)
+        assertTrue(complexResult.rawImaginaryResult!!.toDouble() < 0.0)
+    }
+
+    @Test
+    fun complexInverseCosineAndTangentUseFinitePrincipalBranches() {
+        selectRectangularComplexMode()
+        CalculatorDisplayMemory.appendInverseCosine()
+        CalculatorDisplayMemory.appendDigit('2')
+        CalculatorDisplayMemory.submit()
+        val inverseCosine = CalculatorDisplayMemory.allSubmitted().last()
+        assertEquals(0.0, inverseCosine.rawResult!!.toDouble(), 1.0e-12)
+        assertEquals(1.3169578969248166, inverseCosine.rawImaginaryResult!!.toDouble(), 1.0e-12)
+
+        CalculatorDisplayMemory.appendInverseTangent()
+        CalculatorDisplayMemory.appendDigit('2')
+        CalculatorDisplayMemory.appendImaginaryUnit()
+        CalculatorDisplayMemory.submit()
+        val inverseTangent = CalculatorDisplayMemory.allSubmitted().last()
+        assertEquals(Math.PI / 2.0, inverseTangent.rawResult!!.toDouble(), 1.0e-12)
+        assertEquals(0.5493061443340549, inverseTangent.rawImaginaryResult!!.toDouble(), 1.0e-12)
+    }
+
+    @Test
+    fun squareRootUsesRealAndPrincipalComplexDomains() {
+        CalculatorDisplayMemory.appendSquareRoot()
+        CalculatorDisplayMemory.appendDigit('9')
+        CalculatorDisplayMemory.submit()
+        assertEquals("3", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        CalculatorDisplayMemory.appendSquareRoot()
+        CalculatorDisplayMemory.toggleCurrentNumberSign()
+        CalculatorDisplayMemory.appendDigit('1')
+        CalculatorDisplayMemory.submit()
+        assertEquals("Error: Syntax", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        selectRectangularComplexMode()
+        CalculatorDisplayMemory.appendSquareRoot()
+        CalculatorDisplayMemory.toggleCurrentNumberSign()
+        CalculatorDisplayMemory.appendDigit('1')
+        CalculatorDisplayMemory.submit()
+        assertEquals("i", CalculatorDisplayMemory.allSubmitted().last().result)
+    }
+
+    @Test
+    fun scientificExponentValidatesPlacementSignsAndMalformedInput() {
+        CalculatorDisplayMemory.appendScientificExponent()
+        assertEquals("", CalculatorDisplayMemory.current())
+
+        CalculatorDisplayMemory.appendDigit('1')
+        CalculatorDisplayMemory.appendDecimalPoint()
+        CalculatorDisplayMemory.appendDigit('2')
+        CalculatorDisplayMemory.appendScientificExponent()
+        CalculatorDisplayMemory.toggleCurrentNumberSign()
+        CalculatorDisplayMemory.appendDigit('3')
+        assertEquals("1.2EE-3", CalculatorDisplayMemory.current())
+        CalculatorDisplayMemory.submit()
+        assertEquals("0.0012", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        CalculatorDisplayMemory.appendDigit('2')
+        CalculatorDisplayMemory.appendScientificExponent()
+        CalculatorDisplayMemory.appendDigit('3')
+        CalculatorDisplayMemory.appendOperator('^')
+        CalculatorDisplayMemory.appendDigit('2')
+        CalculatorDisplayMemory.submit()
+        assertEquals("4000000", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        CalculatorDisplayMemory.appendDigit('1')
+        CalculatorDisplayMemory.appendScientificExponent()
+        CalculatorDisplayMemory.appendDecimalPoint()
+        CalculatorDisplayMemory.appendDigit('5')
+        CalculatorDisplayMemory.submit()
+        assertEquals("Error: Syntax", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        setField(ModeSettingsMemory, "selectedCategoryIndex", 0)
+        ModeSettingsMemory.selectNextOption()
+        CalculatorDisplayMemory.appendDigit('1')
+        CalculatorDisplayMemory.appendScientificExponent()
+        CalculatorDisplayMemory.appendDigit('3')
+        CalculatorDisplayMemory.submit()
+        assertEquals("1E3", CalculatorDisplayMemory.allSubmitted().last().result)
+    }
+
+    @Test
+    fun entryRecallReplacesTheEditLineAndWalksBackwardThroughSubmittedInputs() {
+        enter("1+1")
+        CalculatorDisplayMemory.submit()
+        enter("3*4")
+        CalculatorDisplayMemory.submit()
+        CalculatorDisplayMemory.appendDigit('9')
+
+        val controller = CalculatorController()
+        controller.state.historyNavigationPosition = 1
+        dispatchSecond(controller, CalculatorKey.ENTER)
+        assertEquals("3*4", CalculatorDisplayMemory.current())
+        assertEquals(1, controller.state.entryRecallPosition)
+        assertEquals(0, controller.state.historyNavigationPosition)
+
+        dispatchSecond(controller, CalculatorKey.ENTER)
+        assertEquals("1+1", CalculatorDisplayMemory.current())
+        assertEquals(2, controller.state.entryRecallPosition)
+
+        dispatchSecond(controller, CalculatorKey.ENTER)
+        assertEquals("1+1", CalculatorDisplayMemory.current())
+        assertEquals(2, controller.state.entryRecallPosition)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_5))
+        assertEquals(0, controller.state.entryRecallPosition)
+        dispatchSecond(controller, CalculatorKey.ENTER)
+        assertEquals("3*4", CalculatorDisplayMemory.current())
+    }
+
+    @Test
+    fun insertModeHasDeterministicHomeYEqualsAndWindowCursorBehavior() {
+        val controller = CalculatorController()
+        enter("123")
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.LEFT))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.LEFT))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_9))
+        assertEquals("193", CalculatorDisplayMemory.current())
+
+        CalculatorDisplayMemory.clearCurrent()
+        enter("123")
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.LEFT))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.LEFT))
+        dispatchSecond(controller, CalculatorKey.DELETE)
+        assertTrue(controller.state.insertMode)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_9))
+        assertEquals("1923", CalculatorDisplayMemory.current())
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.Y_EQUALS))
+        YEqualsMemory.append("123")
+        YEqualsMemory.moveCursorLeft()
+        YEqualsMemory.moveCursorLeft()
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_9))
+        assertEquals("1923", YEqualsMemory.equation(0))
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.WINDOW))
+        WindowSettingsMemory.clearSelected()
+        WindowSettingsMemory.append("123")
+        WindowSettingsMemory.moveCursorLeft()
+        WindowSettingsMemory.moveCursorLeft()
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_9))
+        assertEquals("1923", WindowSettingsMemory.value(0))
+
+        dispatchSecond(controller, CalculatorKey.DELETE)
+        assertFalse(controller.state.insertMode)
+    }
+
+    @Test
+    fun insertModeDoesNotExceedTheHomeInputLimit() {
+        repeat(31) { CalculatorDisplayMemory.appendDigit('1') }
+        CalculatorDisplayMemory.moveCursorLeft()
+        val cursorBeforeInsert = CalculatorDisplayMemory.cursorPosition()
+
+        val controller = CalculatorController()
+        dispatchSecond(controller, CalculatorKey.DELETE)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_2))
+
+        assertEquals(31, CalculatorDisplayMemory.current().length)
+        assertEquals(cursorBeforeInsert, CalculatorDisplayMemory.cursorPosition())
+    }
+
+    @Test
+    fun alphaVariablesInsertOutsideZoomAndZoomKeepsItsPhysicalShortcuts() {
+        val controller = CalculatorController()
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ALPHA))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.MATH))
+        assertEquals("A", CalculatorDisplayMemory.current())
+        assertEquals(ModifierLayer.NORMAL, controller.state.modifier)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.Y_EQUALS))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ALPHA))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_3))
+        assertEquals("θ", YEqualsMemory.equation(0))
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.WINDOW))
+        WindowSettingsMemory.clearSelected()
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ALPHA))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_2))
+        assertEquals("Z", WindowSettingsMemory.value(0))
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ZOOM))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ALPHA))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.POWER))
+        assertEquals(CalculatorView.ZOOM, controller.state.view)
+        assertEquals(ModifierLayer.NORMAL, controller.state.modifier)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ALPHA))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.MATH))
+        assertEquals(CalculatorView.GRAPH, controller.state.view)
+
+        val homeExpression = CalculatorDisplayMemory.current()
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ALPHA))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.POWER))
+        assertEquals(CalculatorView.GRAPH, controller.state.view)
+        assertEquals(homeExpression, CalculatorDisplayMemory.current())
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.MODE))
+        val selectedModeCategory = ModeSettingsMemory.selectedCategoryIndex
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ALPHA))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.MATH))
+        assertEquals(selectedModeCategory, ModeSettingsMemory.selectedCategoryIndex)
+        assertEquals(ModifierLayer.NORMAL, controller.state.modifier)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.TRACE))
+        val traceBeforeAlpha = controller.state.trace
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ALPHA))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.APPS))
+        assertEquals(traceBeforeAlpha, controller.state.trace)
+    }
+
+    @Test
+    fun scalarVariablesDefaultToZeroStoreRealAndComplexValuesAndSupportGraphs() {
+        CalculatorDisplayMemory.appendVariable(CalculatorVariable.A)
+        CalculatorDisplayMemory.submit()
+        assertEquals("0", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        CalculatorDisplayMemory.appendDigit('5')
+        CalculatorDisplayMemory.appendStoreOperator()
+        CalculatorDisplayMemory.appendVariable(CalculatorVariable.A)
+        CalculatorDisplayMemory.submit()
+        assertEquals(
+            0,
+            CalculatorVariableMemory.value(CalculatorVariable.A).real.compareTo(BigDecimal("5"))
+        )
+
+        CalculatorDisplayMemory.appendDigit('2')
+        CalculatorDisplayMemory.appendVariable(CalculatorVariable.A)
+        CalculatorDisplayMemory.submit()
+        assertEquals("10", CalculatorDisplayMemory.allSubmitted().last().result)
+        assertEquals(10.0, CalculatorDisplayMemory.evaluateForGraph("AX", 2.0))
+
+        selectRectangularComplexMode()
+        CalculatorDisplayMemory.appendImaginaryUnit()
+        CalculatorDisplayMemory.appendStoreOperator()
+        CalculatorDisplayMemory.appendVariable(CalculatorVariable.B)
+        CalculatorDisplayMemory.submit()
+        assertEquals(
+            0,
+            CalculatorVariableMemory.value(CalculatorVariable.B).imaginary!!.compareTo(BigDecimal.ONE)
+        )
+
+        CalculatorDisplayMemory.appendVariable(CalculatorVariable.B)
+        CalculatorDisplayMemory.squareCurrentOperand()
+        CalculatorDisplayMemory.submit()
+        assertEquals("-1", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        CalculatorDisplayMemory.appendImaginaryUnit()
+        CalculatorDisplayMemory.appendStoreOperator()
+        CalculatorDisplayMemory.appendVariable(CalculatorVariable.A)
+        CalculatorDisplayMemory.submit()
+        assertEquals(null, CalculatorDisplayMemory.evaluateForGraph("A", 0.0))
+    }
+
+    @Test
+    fun xStorageKeepsLegacyPersistenceAndGraphXStillOverridesTheStoredValue() {
+        CalculatorDisplayMemory.appendDigit('7')
+        CalculatorDisplayMemory.appendStoreOperator()
+        CalculatorDisplayMemory.appendXVariable()
+        CalculatorDisplayMemory.submit()
+
+        assertEquals(
+            0,
+            CalculatorVariableMemory.value(CalculatorVariable.X).real.compareTo(BigDecimal("7"))
+        )
+        assertEquals(7.0, CalculatorDisplayMemory.evaluateForGraph("X", 7.0))
+        assertEquals(2.0, CalculatorDisplayMemory.evaluateForGraph("X", 2.0))
+        assertTrue(
+            Files.readAllLines(TEST_CONFIG.resolve("mi84_calc_display_memory.txt"))
+                .contains("x\t7")
+        )
+    }
+
+    @Test
+    fun scalarVariablePersistenceRoundTripsAndImportsLegacyX() {
+        CalculatorVariableMemory.set(CalculatorVariable.A, BigDecimal("12.5"))
+        CalculatorVariableMemory.set(
+            CalculatorVariable.B,
+            BigDecimal.ONE,
+            BigDecimal("-2.25")
+        )
+        resetVariableMemory()
+        invokePrivateNoArg(CalculatorVariableMemory, "load")
+
+        assertEquals(
+            CalculatorScalarValue(BigDecimal("12.5")),
+            CalculatorVariableMemory.value(CalculatorVariable.A)
+        )
+        assertEquals(
+            CalculatorScalarValue(BigDecimal.ONE, BigDecimal("-2.25")),
+            CalculatorVariableMemory.value(CalculatorVariable.B)
+        )
+
+        Files.deleteIfExists(TEST_CONFIG.resolve("mi84_calc_scalar_variables.txt"))
+        resetVariableMemory()
+        CalculatorVariableMemory.initializeLegacyX(BigDecimal("9"))
+        assertEquals(
+            CalculatorScalarValue(BigDecimal("9")),
+            CalculatorVariableMemory.value(CalculatorVariable.X)
+        )
+        assertTrue(Files.exists(TEST_CONFIG.resolve("mi84_calc_scalar_variables.txt")))
+    }
+
     private fun enter(expression: String) {
         expression.forEach { character ->
             when {
@@ -231,13 +715,18 @@ class CalculatorRegressionTest {
     }
 
     private fun selectRectangularComplexMode() {
-        repeat(4) { ModeSettingsMemory.selectNextCategory() }
+        setField(ModeSettingsMemory, "selectedCategoryIndex", 4)
         ModeSettingsMemory.selectNextOption()
     }
 
     private fun selectDegreeMode() {
-        repeat(2) { ModeSettingsMemory.selectNextCategory() }
+        setField(ModeSettingsMemory, "selectedCategoryIndex", 2)
         ModeSettingsMemory.selectPreviousOption()
+    }
+
+    private fun dispatchSecond(controller: CalculatorController, key: CalculatorKey) {
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.SECOND))
+        controller.dispatch(CalculatorInputEvent(key))
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -250,6 +739,29 @@ class CalculatorRegressionTest {
         setField(CalculatorDisplayMemory, "cursor", 0)
         setField(CalculatorDisplayMemory, "xValue", BigDecimal.ZERO)
         setField(CalculatorDisplayMemory, "firstVisibleSubmittedIndex", 0)
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun resetYEqualsMemory() {
+        val equations = field(YEqualsMemory, "equations").get(YEqualsMemory) as MutableList<String>
+        val cursors = field(YEqualsMemory, "cursors").get(YEqualsMemory) as MutableList<Int>
+        equations.indices.forEach { index ->
+            equations[index] = ""
+            cursors[index] = 0
+        }
+        setField(YEqualsMemory, "selectedIndex", 0)
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun resetVariableMemory() {
+        val values = field(CalculatorVariableMemory, "values")
+            .get(CalculatorVariableMemory) as MutableMap<CalculatorVariable, CalculatorScalarValue>
+        CalculatorVariable.entries.forEach { variable ->
+            values[variable] = CalculatorScalarValue(BigDecimal.ZERO)
+        }
+        val loadedVariables = field(CalculatorVariableMemory, "loadedVariables")
+            .get(CalculatorVariableMemory) as MutableSet<CalculatorVariable>
+        loadedVariables.clear()
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -266,6 +778,10 @@ class CalculatorRegressionTest {
 
     private fun field(target: Any, name: String) =
         target.javaClass.getDeclaredField(name).apply { isAccessible = true }
+
+    private fun invokePrivateNoArg(target: Any, name: String) {
+        target.javaClass.getDeclaredMethod(name).apply { isAccessible = true }.invoke(target)
+    }
 
     companion object {
         private val TEST_CONFIG: Path = TestFabricEnvironment.configDir

@@ -51,6 +51,8 @@ class CalculatorUiState {
     var view = CalculatorView.HOME
     var modifier = ModifierLayer.NORMAL
     var historyNavigationPosition = 0
+    var entryRecallPosition = 0
+    var insertMode = false
     var trace: TraceState? = null
     var zoomGraph: ZoomGraphState? = null
     var zoomTab = ZoomTab.ZOOM

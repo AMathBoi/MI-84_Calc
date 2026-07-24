@@ -91,11 +91,11 @@ object WindowSettingsMemory {
         if (cursors[selectedIndex] < values[selectedIndex].length) cursors[selectedIndex]++
     }
 
-    /** Calculator-style entry replaces the character beneath the forward cursor. */
-    fun append(text: String) {
+    /** Calculator-style entry inserts or overwrites at the forward cursor. */
+    fun append(text: String, insertMode: Boolean = false) {
         val value = values[selectedIndex]
         val cursor = cursors[selectedIndex]
-        val replacedLength = if (cursor < value.length) 1 else 0
+        val replacedLength = if (!insertMode && cursor < value.length) 1 else 0
         if (value.length - replacedLength + text.length > MAX_VALUE_LENGTH) return
 
         values[selectedIndex] = value.removeRange(cursor, cursor + replacedLength)

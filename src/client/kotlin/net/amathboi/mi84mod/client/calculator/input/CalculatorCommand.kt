@@ -1,5 +1,6 @@
 package net.amathboi.mi84mod.client.calculator.input
 
+import net.amathboi.mi84mod.client.calculator.CalculatorVariable
 import net.amathboi.mi84mod.client.calculator.ui.CalculatorView
 
 enum class ModifierLayer {
@@ -34,6 +35,20 @@ sealed interface CalculatorCommand {
     data object Delete : CalculatorCommand
     data object Clear : CalculatorCommand
     data object Enter : CalculatorCommand
+    data object InsertAns : CalculatorCommand
+    data object InsertImaginaryUnit : CalculatorCommand
+    data object InsertPi : CalculatorCommand
+    data object InsertEuler : CalculatorCommand
+    data object InsertInverseSine : CalculatorCommand
+    data object InsertInverseCosine : CalculatorCommand
+    data object InsertInverseTangent : CalculatorCommand
+    data object InsertTenPower : CalculatorCommand
+    data object InsertEulerPower : CalculatorCommand
+    data object InsertSquareRoot : CalculatorCommand
+    data object InsertScientificExponent : CalculatorCommand
+    data object RecallEntry : CalculatorCommand
+    data object ToggleInsertMode : CalculatorCommand
+    data class InsertVariable(val variable: CalculatorVariable) : CalculatorCommand
     data class Placeholder(val key: CalculatorKey, val layer: ModifierLayer) : CalculatorCommand
     data class Unsupported(val key: CalculatorKey) : CalculatorCommand
 }
@@ -46,8 +61,59 @@ object CalculatorKeyBindings {
         if (key == CalculatorKey.MODE && layer == ModifierLayer.SECOND) {
             return CalculatorCommand.QuitToHome
         }
-        if (layer != ModifierLayer.NORMAL) return CalculatorCommand.Placeholder(key, layer)
-        return primaryCommand(key)
+        return when (layer) {
+            ModifierLayer.NORMAL -> primaryCommand(key)
+            ModifierLayer.SECOND -> secondCommand(key)
+            ModifierLayer.ALPHA -> alphaCommand(key)
+        }
+    }
+
+    private fun secondCommand(key: CalculatorKey): CalculatorCommand = when (key) {
+        CalculatorKey.NEGATIVE -> CalculatorCommand.InsertAns
+        CalculatorKey.DECIMAL -> CalculatorCommand.InsertImaginaryUnit
+        CalculatorKey.POWER -> CalculatorCommand.InsertPi
+        CalculatorKey.DIVIDE -> CalculatorCommand.InsertEuler
+        CalculatorKey.SIN -> CalculatorCommand.InsertInverseSine
+        CalculatorKey.COS -> CalculatorCommand.InsertInverseCosine
+        CalculatorKey.TAN -> CalculatorCommand.InsertInverseTangent
+        CalculatorKey.LOG -> CalculatorCommand.InsertTenPower
+        CalculatorKey.LN -> CalculatorCommand.InsertEulerPower
+        CalculatorKey.SQUARE -> CalculatorCommand.InsertSquareRoot
+        CalculatorKey.COMMA -> CalculatorCommand.InsertScientificExponent
+        CalculatorKey.ENTER -> CalculatorCommand.RecallEntry
+        CalculatorKey.DELETE -> CalculatorCommand.ToggleInsertMode
+        else -> CalculatorCommand.Placeholder(key, ModifierLayer.SECOND)
+    }
+
+    private fun alphaCommand(key: CalculatorKey): CalculatorCommand = when (key) {
+        CalculatorKey.MATH -> CalculatorCommand.InsertVariable(CalculatorVariable.A)
+        CalculatorKey.APPS -> CalculatorCommand.InsertVariable(CalculatorVariable.B)
+        CalculatorKey.PROGRAM -> CalculatorCommand.InsertVariable(CalculatorVariable.C)
+        CalculatorKey.RECIPROCAL -> CalculatorCommand.InsertVariable(CalculatorVariable.D)
+        CalculatorKey.SIN -> CalculatorCommand.InsertVariable(CalculatorVariable.E)
+        CalculatorKey.COS -> CalculatorCommand.InsertVariable(CalculatorVariable.F)
+        CalculatorKey.TAN -> CalculatorCommand.InsertVariable(CalculatorVariable.G)
+        CalculatorKey.POWER -> CalculatorCommand.InsertVariable(CalculatorVariable.H)
+        CalculatorKey.SQUARE -> CalculatorCommand.InsertVariable(CalculatorVariable.I)
+        CalculatorKey.COMMA -> CalculatorCommand.InsertVariable(CalculatorVariable.J)
+        CalculatorKey.OPEN_PARENTHESIS -> CalculatorCommand.InsertVariable(CalculatorVariable.K)
+        CalculatorKey.CLOSE_PARENTHESIS -> CalculatorCommand.InsertVariable(CalculatorVariable.L)
+        CalculatorKey.DIVIDE -> CalculatorCommand.InsertVariable(CalculatorVariable.M)
+        CalculatorKey.LOG -> CalculatorCommand.InsertVariable(CalculatorVariable.N)
+        CalculatorKey.DIGIT_7 -> CalculatorCommand.InsertVariable(CalculatorVariable.O)
+        CalculatorKey.DIGIT_8 -> CalculatorCommand.InsertVariable(CalculatorVariable.P)
+        CalculatorKey.DIGIT_9 -> CalculatorCommand.InsertVariable(CalculatorVariable.Q)
+        CalculatorKey.MULTIPLY -> CalculatorCommand.InsertVariable(CalculatorVariable.R)
+        CalculatorKey.LN -> CalculatorCommand.InsertVariable(CalculatorVariable.S)
+        CalculatorKey.DIGIT_4 -> CalculatorCommand.InsertVariable(CalculatorVariable.T)
+        CalculatorKey.DIGIT_5 -> CalculatorCommand.InsertVariable(CalculatorVariable.U)
+        CalculatorKey.DIGIT_6 -> CalculatorCommand.InsertVariable(CalculatorVariable.V)
+        CalculatorKey.SUBTRACT -> CalculatorCommand.InsertVariable(CalculatorVariable.W)
+        CalculatorKey.STORE -> CalculatorCommand.InsertVariable(CalculatorVariable.X)
+        CalculatorKey.DIGIT_1 -> CalculatorCommand.InsertVariable(CalculatorVariable.Y)
+        CalculatorKey.DIGIT_2 -> CalculatorCommand.InsertVariable(CalculatorVariable.Z)
+        CalculatorKey.DIGIT_3 -> CalculatorCommand.InsertVariable(CalculatorVariable.THETA)
+        else -> CalculatorCommand.Placeholder(key, ModifierLayer.ALPHA)
     }
 
     private fun primaryCommand(key: CalculatorKey): CalculatorCommand = when (key) {

@@ -81,12 +81,11 @@ class CalculatorController(
 
         if (state.view == CalculatorView.ZOOM && state.modifier == ModifierLayer.ALPHA) {
             val alphaHotkey = alphaHotkeyFor(event.key)
-            state.modifier = ModifierLayer.NORMAL
             if (alphaHotkey != null) {
+                state.modifier = ModifierLayer.NORMAL
                 activateZoomHotkey(alphaHotkey, graphAspect)
                 return DispatchResult.Handled
             }
-            return DispatchResult.Placeholder(event.key, ModifierLayer.ALPHA)
         }
 
         val activeLayer = state.modifier
@@ -112,13 +111,17 @@ class CalculatorController(
                 beginTrace()
                 return DispatchResult.Handled
             }
+            CalculatorCommand.ToggleInsertMode -> {
+                state.insertMode = !state.insertMode
+                return DispatchResult.Handled
+            }
             else -> Unit
         }
 
         when (state.view) {
             CalculatorView.HOME -> HomeViewController.handle(command, state)
-            CalculatorView.Y_EQUALS -> YEqualsViewController.handle(command)
-            CalculatorView.WINDOW -> WindowViewController.handle(command)
+            CalculatorView.Y_EQUALS -> YEqualsViewController.handle(command, state)
+            CalculatorView.WINDOW -> WindowViewController.handle(command, state)
             CalculatorView.MODE -> ModeViewController.handle(command)
             CalculatorView.ZOOM -> handleZoom(command, graphAspect)
             CalculatorView.ZOOM_FACTORS -> handleZoomFactors(command)
@@ -221,6 +224,7 @@ class CalculatorController(
         state.zoomGraph = null
         state.modifier = ModifierLayer.NORMAL
         state.historyNavigationPosition = 0
+        state.entryRecallPosition = 0
     }
 
     private fun beginTrace() {
@@ -230,6 +234,7 @@ class CalculatorController(
         state.zoomGraph = null
         state.modifier = ModifierLayer.NORMAL
         state.historyNavigationPosition = 0
+        state.entryRecallPosition = 0
     }
 
     private fun setCurrentZoomSelectedIndex(index: Int) {

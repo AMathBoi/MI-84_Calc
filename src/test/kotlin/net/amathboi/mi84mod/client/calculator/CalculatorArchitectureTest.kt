@@ -75,19 +75,76 @@ class CalculatorArchitectureTest {
     @Test
     fun secondAndAlphaLayersHaveExplicitShiftedCommands() {
         val nonModifierKeys = CalculatorKey.entries - setOf(CalculatorKey.SECOND, CalculatorKey.ALPHA)
+        val implementedSecondCommands = mapOf(
+            CalculatorKey.NEGATIVE to CalculatorCommand.InsertAns,
+            CalculatorKey.DECIMAL to CalculatorCommand.InsertImaginaryUnit,
+            CalculatorKey.POWER to CalculatorCommand.InsertPi,
+            CalculatorKey.DIVIDE to CalculatorCommand.InsertEuler,
+            CalculatorKey.SIN to CalculatorCommand.InsertInverseSine,
+            CalculatorKey.COS to CalculatorCommand.InsertInverseCosine,
+            CalculatorKey.TAN to CalculatorCommand.InsertInverseTangent,
+            CalculatorKey.LOG to CalculatorCommand.InsertTenPower,
+            CalculatorKey.LN to CalculatorCommand.InsertEulerPower,
+            CalculatorKey.SQUARE to CalculatorCommand.InsertSquareRoot,
+            CalculatorKey.COMMA to CalculatorCommand.InsertScientificExponent,
+            CalculatorKey.ENTER to CalculatorCommand.RecallEntry,
+            CalculatorKey.DELETE to CalculatorCommand.ToggleInsertMode
+        )
+        val implementedAlphaCommands = listOf(
+            CalculatorKey.MATH,
+            CalculatorKey.APPS,
+            CalculatorKey.PROGRAM,
+            CalculatorKey.RECIPROCAL,
+            CalculatorKey.SIN,
+            CalculatorKey.COS,
+            CalculatorKey.TAN,
+            CalculatorKey.POWER,
+            CalculatorKey.SQUARE,
+            CalculatorKey.COMMA,
+            CalculatorKey.OPEN_PARENTHESIS,
+            CalculatorKey.CLOSE_PARENTHESIS,
+            CalculatorKey.DIVIDE,
+            CalculatorKey.LOG,
+            CalculatorKey.DIGIT_7,
+            CalculatorKey.DIGIT_8,
+            CalculatorKey.DIGIT_9,
+            CalculatorKey.MULTIPLY,
+            CalculatorKey.LN,
+            CalculatorKey.DIGIT_4,
+            CalculatorKey.DIGIT_5,
+            CalculatorKey.DIGIT_6,
+            CalculatorKey.SUBTRACT,
+            CalculatorKey.STORE,
+            CalculatorKey.DIGIT_1,
+            CalculatorKey.DIGIT_2,
+            CalculatorKey.DIGIT_3
+        ).zip(CalculatorVariable.entries).toMap()
         nonModifierKeys.forEach { key ->
-            if (key == CalculatorKey.MODE) {
-                assertIs<CalculatorCommand.QuitToHome>(
-                    CalculatorKeyBindings.resolve(key, ModifierLayer.SECOND)
+            when {
+                key == CalculatorKey.MODE ->
+                    assertIs<CalculatorCommand.QuitToHome>(
+                        CalculatorKeyBindings.resolve(key, ModifierLayer.SECOND)
+                    )
+                key in implementedSecondCommands ->
+                    assertEquals(
+                        implementedSecondCommands.getValue(key),
+                        CalculatorKeyBindings.resolve(key, ModifierLayer.SECOND)
+                    )
+                else ->
+                    assertIs<CalculatorCommand.Placeholder>(
+                        CalculatorKeyBindings.resolve(key, ModifierLayer.SECOND)
+                    )
+            }
+            if (key in implementedAlphaCommands) {
+                assertEquals(
+                    CalculatorCommand.InsertVariable(implementedAlphaCommands.getValue(key)),
+                    CalculatorKeyBindings.resolve(key, ModifierLayer.ALPHA)
                 )
             } else {
                 assertIs<CalculatorCommand.Placeholder>(
-                    CalculatorKeyBindings.resolve(key, ModifierLayer.SECOND)
+                    CalculatorKeyBindings.resolve(key, ModifierLayer.ALPHA)
                 )
             }
-            assertIs<CalculatorCommand.Placeholder>(
-                CalculatorKeyBindings.resolve(key, ModifierLayer.ALPHA)
-            )
         }
     }
 
@@ -113,7 +170,7 @@ class CalculatorArchitectureTest {
         val beforeAlphaPlaceholder = CalculatorDisplayMemory.current()
         controller.dispatch(CalculatorInputEvent(CalculatorKey.ALPHA))
         assertEquals(ModifierLayer.ALPHA, controller.state.modifier)
-        val alphaResult = controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_1))
+        val alphaResult = controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_0))
         assertIs<DispatchResult.Placeholder>(alphaResult)
         assertEquals(ModifierLayer.NORMAL, controller.state.modifier)
         assertEquals(beforeAlphaPlaceholder, CalculatorDisplayMemory.current())

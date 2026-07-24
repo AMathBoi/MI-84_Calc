@@ -27,7 +27,7 @@ object CalculatorDisplayMemory {
 
     private val submittedEntries = mutableListOf<SubmittedEntry>()
     private var currentEntry = ""
-    // Index between expression tokens. Function names plus their opening parenthesis are one token.
+    // Index between expression tokens. Multi-character entry tokens are traversed as one token.
     private var cursor = 0
     // X mirrors the calculator's default graphing variable and is retained in the memory file.
     private var xValue = BigDecimal.ZERO
@@ -36,6 +36,7 @@ object CalculatorDisplayMemory {
 
     init {
         load()
+        CalculatorVariableMemory.initializeLegacyX(xValue)
         cursor = currentEntry.length
     }
 
@@ -45,12 +46,22 @@ object CalculatorDisplayMemory {
 
     /** Width of the token under the cursor, used to draw the block cursor over it. */
     fun cursorTokenLength(): Int =
-        functionTokenStartingAt(cursor)?.length ?: if (cursor < currentEntry.length) 1 else 0
+        entryTokenStartingAt(cursor)?.length ?: if (cursor < currentEntry.length) 1 else 0
 
     fun submitted(): List<SubmittedEntry> = submittedEntries.drop(firstVisibleSubmittedIndex)
 
     /** All saved entries, including rows currently hidden because the LCD is full. */
     fun allSubmitted(): List<SubmittedEntry> = submittedEntries.toList()
+
+    fun submittedInputFromNewest(position: Int): String? =
+        submittedEntries.getOrNull(submittedEntries.size - position)?.input
+
+    /** ENTRY replaces the active edit line with one previously submitted input. */
+    fun replaceCurrentWithSubmittedInput(text: String) {
+        currentEntry = text.take(MAX_CHARACTERS)
+        cursor = currentEntry.length
+        save()
+    }
 
     /** Returns history rows in newest-first navigation order: result, input, then the prior entry. */
     fun historyLineFromNewest(position: Int): HistoryLine? {
@@ -69,35 +80,49 @@ object CalculatorDisplayMemory {
         insertText(text)
     }
 
-    fun appendDigit(digit: Char) {
+    fun appendDigit(digit: Char, insertMode: Boolean = false) {
         require(digit.isDigit()) { "Only digits can be added to calculator display memory." }
         if (currentEntry.length == MAX_CHARACTERS) return
 
-        replaceTokenAtCursor(digit.toString())
+        appendText(digit.toString(), insertMode)
     }
 
     /** Adds or replaces the pending arithmetic operation. */
-    fun appendOperator(operator: Char) {
+    fun appendOperator(operator: Char, insertMode: Boolean = false) {
         require(operator in BINARY_OPERATORS) { "Unsupported calculator operator: $operator" }
         if (currentEntry.isEmpty()) {
             startWithPreviousAnswer(operator)
             return
         }
         if (!endsOperandBeforeCursor()) return
-        replaceTokenAtCursor(operator.toString())
+        appendText(operator.toString(), insertMode)
     }
 
     /**
      * Adds a decimal point, supplying a leading zero when needed. A second decimal remains visible
      * and is reported as a syntax error on submission instead of being silently ignored.
      */
-    fun appendDecimalPoint() {
+    fun appendDecimalPoint(insertMode: Boolean = false) {
         val leadingZeroNeeded = canStartOperandAtCursor()
-        replaceTokenAtCursor(if (leadingZeroNeeded) "0." else ".")
+        appendText(if (leadingZeroNeeded) "0." else ".", insertMode)
     }
 
     /** Toggles the sign of the number currently being entered. */
     fun toggleCurrentNumberSign() {
+        scientificExponentSignIndex()?.let { signIndex ->
+            currentEntry = if (currentEntry.getOrNull(signIndex) == '-') {
+                if (signIndex < cursor) cursor--
+                currentEntry.removeRange(signIndex, signIndex + 1)
+            } else if (currentEntry.length < MAX_CHARACTERS) {
+                if (signIndex <= cursor) cursor++
+                currentEntry.substring(0, signIndex) + '-' + currentEntry.substring(signIndex)
+            } else {
+                currentEntry
+            }
+            save()
+            return
+        }
+
         val operandStart = currentOperandStart()
         currentEntry = if (currentEntry.length > operandStart && currentEntry[operandStart] == '-') {
             if (operandStart < cursor) cursor--
@@ -112,42 +137,85 @@ object CalculatorDisplayMemory {
     }
 
     /** Appends a square operation to the current operand, or applies it to Ans when blank. */
-    fun squareCurrentOperand() {
-        if (currentEntry.isEmpty()) startWithPreviousAnswer("^2") else appendPower("2")
+    fun squareCurrentOperand(insertMode: Boolean = false) {
+        if (currentEntry.isEmpty()) startWithPreviousAnswer("^2") else appendPower("2", insertMode)
     }
 
     /** Appends a reciprocal operation to the current operand, or applies it to Ans when blank. */
-    fun reciprocalCurrentOperand() {
-        if (currentEntry.isEmpty()) startWithPreviousAnswer("^-1") else appendPower("-1")
+    fun reciprocalCurrentOperand(insertMode: Boolean = false) {
+        if (currentEntry.isEmpty()) startWithPreviousAnswer("^-1") else appendPower("-1", insertMode)
     }
 
-    fun appendOpenParenthesis() {
+    fun appendOpenParenthesis(insertMode: Boolean = false) {
         if (canInsertPrimaryAtCursor()) {
-            appendText("(")
+            appendText("(", insertMode)
         }
     }
 
-    fun appendCloseParenthesis() {
+    fun appendCloseParenthesis(insertMode: Boolean = false) {
         if (endsOperandBeforeCursor() && currentEntry.count { it == '(' } > currentEntry.count { it == ')' }) {
-            appendText(")")
+            appendText(")", insertMode)
         }
     }
 
     /** Adds the calculator's X variable wherever a new operand may begin. */
-    fun appendXVariable() {
-        if (canInsertPrimaryAtCursor()) appendText("X")
+    fun appendXVariable(insertMode: Boolean = false) {
+        appendVariable(CalculatorVariable.X, insertMode)
+    }
+
+    fun appendVariable(variable: CalculatorVariable, insertMode: Boolean = false) {
+        if (canInsertPrimaryAtCursor()) appendText(variable.symbol.toString(), insertMode)
     }
 
     /** Adds a store operator after an expression; the destination is selected with the X key. */
-    fun appendStoreOperator() {
-        if (endsOperandBeforeCursor()) appendText(STORE_OPERATOR)
+    fun appendStoreOperator(insertMode: Boolean = false) {
+        if (endsOperandBeforeCursor()) appendText(STORE_OPERATOR, insertMode)
     }
 
     /** Adds a scientific function and its opening parenthesis when an operand may begin. */
-    fun appendFunction(function: String) {
+    fun appendFunction(function: String, insertMode: Boolean = false) {
         require(function in FUNCTIONS) { "Unsupported calculator function: $function" }
         if (canInsertPrimaryAtCursor()) {
-            appendText("$function(")
+            appendText("$function(", insertMode)
+        }
+    }
+
+    fun appendAns(insertMode: Boolean = false) = appendPrimaryToken(ANSWER_TOKEN, insertMode)
+
+    fun appendImaginaryUnit(insertMode: Boolean = false) =
+        appendPrimaryToken(COMPLEX_UNIT.toString(), insertMode)
+
+    fun appendPi(insertMode: Boolean = false) = appendPrimaryToken(PI_TOKEN.toString(), insertMode)
+
+    fun appendEuler(insertMode: Boolean = false) =
+        appendPrimaryToken(EULER_TOKEN.toString(), insertMode)
+
+    fun appendInverseSine(insertMode: Boolean = false) = appendFunction(INVERSE_SINE, insertMode)
+
+    fun appendInverseCosine(insertMode: Boolean = false) = appendFunction(INVERSE_COSINE, insertMode)
+
+    fun appendInverseTangent(insertMode: Boolean = false) =
+        appendFunction(INVERSE_TANGENT, insertMode)
+
+    fun appendSquareRoot(insertMode: Boolean = false) = appendFunction(SQUARE_ROOT, insertMode)
+
+    fun appendTenPower(insertMode: Boolean = false) = appendPowerTemplate("10", insertMode)
+
+    fun appendEulerPower(insertMode: Boolean = false) =
+        appendPowerTemplate(EULER_TOKEN.toString(), insertMode)
+
+    /**
+     * Adds the calculator EE marker only after a complete decimal mantissa. The exponent itself is
+     * entered with digits and may be negated with the (−) key.
+     */
+    fun appendScientificExponent(insertMode: Boolean = false) {
+        val operand = currentEntry.substring(currentOperandStart(), cursor).removePrefix("-")
+        if (operand.isNotEmpty() &&
+            operand.last().isDigit() &&
+            SCIENTIFIC_EXPONENT_TOKEN !in operand &&
+            operand.toBigDecimalOrNull() != null
+        ) {
+            appendText(SCIENTIFIC_EXPONENT_TOKEN, insertMode)
         }
     }
 
@@ -155,8 +223,8 @@ object CalculatorDisplayMemory {
      * Keeps comma entry visible for future multi-argument functions. It currently evaluates as an
      * error because no multi-argument functions have been implemented.
      */
-    fun appendComma() {
-        appendText(",")
+    fun appendComma(insertMode: Boolean = false) {
+        appendText(",", insertMode)
     }
 
     /**
@@ -206,22 +274,22 @@ object CalculatorDisplayMemory {
         save()
     }
 
-    /** Moves over a whole function token (for example, `log(`) instead of its individual letters. */
+    /** Moves over a whole multi-character entry token instead of its individual characters. */
     fun moveCursorLeft() {
         if (cursor == 0) return
-        cursor = functionTokenEndingAt(cursor)?.let { cursor - it.length } ?: cursor - 1
+        cursor = entryTokenEndingAt(cursor)?.let { cursor - it.length } ?: cursor - 1
     }
 
-    /** Moves over a whole function token (for example, `log(`) instead of its individual letters. */
+    /** Moves over a whole multi-character entry token instead of its individual characters. */
     fun moveCursorRight() {
         if (cursor == currentEntry.length) return
-        cursor = functionTokenStartingAt(cursor)?.let { cursor + it.length } ?: cursor + 1
+        cursor = entryTokenStartingAt(cursor)?.let { cursor + it.length } ?: cursor + 1
     }
 
     /** Deletes the token beneath the cursor; this is a forward-delete key, not backspace. */
     fun deleteAtCursor() {
         if (cursor == currentEntry.length) return
-        val token = functionTokenStartingAt(cursor)
+        val token = entryTokenStartingAt(cursor)
         val length = token?.length ?: 1
         currentEntry = currentEntry.removeRange(cursor, cursor + length)
         save()
@@ -239,7 +307,7 @@ object CalculatorDisplayMemory {
         ExpressionParser(
             completeFunctionParentheses(expression),
             latestAnswer(),
-            BigDecimal.valueOf(graphX)
+            realVariableValues(BigDecimal.valueOf(graphX))
         ).parse().toDouble()
     }.getOrNull()?.takeIf(Double::isFinite)
 
@@ -252,7 +320,7 @@ object CalculatorDisplayMemory {
                 ComplexExpressionEvaluator(
                     expression,
                     latestComplexAnswer(),
-                    xValue.toDouble(),
+                    complexVariableValues(),
                     ModeSettingsMemory.usesDegrees()
                 ).parse()
             }
@@ -275,13 +343,15 @@ object CalculatorDisplayMemory {
         check(storeIndex > 0 && expression.indexOf(STORE_OPERATOR, storeIndex + STORE_OPERATOR.length) == -1) {
             "Only one store operation is allowed"
         }
-        check(expression.substring(storeIndex + STORE_OPERATOR.length) == "X") {
-            "Only X can be assigned"
-        }
-
-        val value = evaluateValue(expression.substring(0, storeIndex))
-        xValue = value
-        EvaluationResult(format(value), value)
+        val destination = expression.substring(storeIndex + STORE_OPERATOR.length)
+            .singleOrNull()
+            ?.let(CalculatorVariable::fromSymbol)
+            ?: error("A scalar variable destination is required")
+        val result = evaluate(completeFunctionParentheses(expression.substring(0, storeIndex)))
+        val realValue = result.value ?: return EvaluationResult(result.display)
+        CalculatorVariableMemory.set(destination, realValue, result.imaginaryValue)
+        if (destination == CalculatorVariable.X) xValue = realValue
+        result
     } catch (exception: CalculatorEvaluationException) {
         EvaluationResult(exception.message ?: SYNTAX_ERROR)
     } catch (_: Exception) {
@@ -289,7 +359,29 @@ object CalculatorDisplayMemory {
     }
 
     private fun evaluateValue(expression: String): BigDecimal =
-        ExpressionParser(completeFunctionParentheses(expression), latestAnswer(), xValue).parse()
+        ExpressionParser(
+            completeFunctionParentheses(expression),
+            latestAnswer(),
+            realVariableValues()
+        ).parse()
+
+    private fun realVariableValues(xOverride: BigDecimal? = null): Map<CalculatorVariable, BigDecimal?> =
+        CalculatorVariable.entries.associateWith { variable ->
+            if (variable == CalculatorVariable.X && xOverride != null) {
+                xOverride
+            } else {
+                CalculatorVariableMemory.value(variable).let { value ->
+                    value.real.takeIf { value.imaginary == null }
+                }
+            }
+        }
+
+    private fun complexVariableValues(): Map<CalculatorVariable, ComplexNumber> =
+        CalculatorVariable.entries.associateWith { variable ->
+            CalculatorVariableMemory.value(variable).let { value ->
+                ComplexNumber(value.real.toDouble(), value.imaginary?.toDouble() ?: 0.0)
+            }
+        }
 
     private fun format(value: BigDecimal): String = ModeSettingsMemory.formatNumber(value)
 
@@ -301,9 +393,15 @@ object CalculatorDisplayMemory {
         }
 
         val (displayReal, displayImaginary) = normalizeComplexDisplayParts(value)
+        if (displayImaginary == 0.0) {
+            return EvaluationResult(
+                format(BigDecimal.valueOf(displayReal)),
+                rawRealValue
+            )
+        }
         return EvaluationResult(
             formatRectangularComplex(displayReal, displayImaginary),
-            rawRealValue,
+            rawRealValue.takeUnless { displayReal == 0.0 } ?: BigDecimal.ZERO,
             BigDecimal.valueOf(value.imaginary)
         )
     }
@@ -318,6 +416,7 @@ object CalculatorDisplayMemory {
         }
         val imaginaryText = "$imaginaryCoefficient${COMPLEX_UNIT}"
         return when {
+            imaginary == 0.0 -> realText.ifEmpty { "0" }
             real == 0.0 && imaginary < 0.0 -> "-$imaginaryText"
             real == 0.0 -> imaginaryText
             imaginary < 0.0 -> "$realText-$imaginaryText"
@@ -326,8 +425,8 @@ object CalculatorDisplayMemory {
     }
 
     /**
-     * Removes only a component that is tiny relative to the other component for display. Raw
-     * complex values remain untouched so a legitimate small standalone value survives in Ans.
+     * Removes only a component that is tiny relative to the other component. A small standalone
+     * value survives, while numerical residue beside a much larger component is stored as zero.
      */
     private fun normalizeComplexDisplayParts(value: ComplexNumber): Pair<Double, Double> {
         var real = normalizeComplexUnit(value.real)
@@ -395,12 +494,20 @@ object CalculatorDisplayMemory {
         submittedEntries += entry
     }
 
-    private fun appendPower(exponent: String) {
-        if (endsOperandBeforeCursor()) appendText("^$exponent")
+    private fun appendPower(exponent: String, insertMode: Boolean) {
+        if (endsOperandBeforeCursor()) appendText("^$exponent", insertMode)
     }
 
-    private fun appendText(text: String) {
-        replaceTokenAtCursor(text)
+    private fun appendPrimaryToken(token: String, insertMode: Boolean) {
+        if (canInsertPrimaryAtCursor()) appendText(token, insertMode)
+    }
+
+    private fun appendPowerTemplate(base: String, insertMode: Boolean) {
+        if (canInsertPrimaryAtCursor()) appendText("$base^(", insertMode)
+    }
+
+    private fun appendText(text: String, insertMode: Boolean = false) {
+        if (insertMode) insertText(text) else replaceTokenAtCursor(text)
     }
 
     private fun insertText(text: String) {
@@ -434,12 +541,19 @@ object CalculatorDisplayMemory {
         canStartOperandAtCursor() || endsOperandBeforeCursor()
 
     private fun endsOperandBeforeCursor(): Boolean =
-        cursor > 0 && currentEntry[cursor - 1].let { it.isDigit() || it == ')' || it == 'X' || it == COMPLEX_UNIT }
+        cursor > 0 && currentEntry[cursor - 1].let {
+            it.isDigit() || it == ')' || isVariableSymbol(it) || it == COMPLEX_UNIT ||
+                it == PI_TOKEN || it == EULER_TOKEN ||
+                currentEntry.substring(0, cursor).endsWith(ANSWER_TOKEN)
+        }
 
     private fun endsOperand(): Boolean = endsOperand(currentEntry)
 
     private fun endsOperand(expression: String): Boolean =
-        expression.lastOrNull()?.let { it.isDigit() || it == ')' || it == 'X' || it == COMPLEX_UNIT } == true
+        expression.lastOrNull()?.let {
+            it.isDigit() || it == ')' || isVariableSymbol(it) || it == COMPLEX_UNIT ||
+                it == PI_TOKEN || it == EULER_TOKEN || expression.endsWith(ANSWER_TOKEN)
+        } == true
 
     /**
      * Lets function entry omit only its final closing parentheses: `sin(X` becomes `sin(X)`.
@@ -450,12 +564,12 @@ object CalculatorDisplayMemory {
         val unclosedParentheses = mutableListOf<Boolean>()
         expression.forEachIndexed { index, character ->
             when (character) {
-                '(' -> unclosedParentheses += FUNCTIONS.any { function ->
-                    index >= function.length && expression.regionMatches(
-                        index - function.length,
-                        function,
+                '(' -> unclosedParentheses += AUTO_CLOSING_PREFIXES.any { prefix ->
+                    index >= prefix.length && expression.regionMatches(
+                        index - prefix.length,
+                        prefix,
                         0,
-                        function.length
+                        prefix.length
                     )
                 }
                 ')' -> if (unclosedParentheses.isNotEmpty()) unclosedParentheses.removeLast()
@@ -483,17 +597,39 @@ object CalculatorDisplayMemory {
 
     private fun endsOperandAt(endExclusive: Int): Boolean {
         val previous = currentEntry.getOrNull(endExclusive - 1) ?: return false
-        return previous.isDigit() || previous == '.' || previous == ')' || previous == 'X' ||
-            previous == COMPLEX_UNIT || currentEntry.substring(0, endExclusive).endsWith("Ans")
+        return previous.isDigit() || previous == '.' || previous == ')' || isVariableSymbol(previous) ||
+            previous == COMPLEX_UNIT || previous == PI_TOKEN || previous == EULER_TOKEN ||
+            currentEntry.substring(0, endExclusive).endsWith(ANSWER_TOKEN)
     }
 
-    private fun functionTokenStartingAt(position: Int): String? =
-        FUNCTIONS.firstOrNull { currentEntry.startsWith("$it(", position) }?.plus("(")
+    private fun isVariableSymbol(character: Char): Boolean =
+        CalculatorVariable.fromSymbol(character) != null
 
-    private fun functionTokenEndingAt(position: Int): String? =
-        FUNCTIONS.firstOrNull { function ->
-            position >= function.length + 1 && currentEntry.regionMatches(position - function.length - 1, "$function(", 0, function.length + 1)
-        }?.plus("(")
+    private fun scientificExponentSignIndex(): Int? {
+        val markerIndex = currentEntry.lastIndexOf(
+            SCIENTIFIC_EXPONENT_TOKEN,
+            startIndex = (cursor - 1).coerceAtLeast(0)
+        )
+        if (markerIndex < currentOperandStart()) return null
+
+        val signIndex = markerIndex + SCIENTIFIC_EXPONENT_TOKEN.length
+        if (cursor < signIndex) return null
+        val exponentPrefix = currentEntry.substring(signIndex, cursor)
+        val digits = exponentPrefix.removePrefix("-")
+        return signIndex.takeIf {
+            (exponentPrefix.isEmpty() || exponentPrefix == "-" || digits.all(Char::isDigit)) &&
+                !digits.contains(SCIENTIFIC_EXPONENT_TOKEN)
+        }
+    }
+
+    private fun entryTokenStartingAt(position: Int): String? =
+        ENTRY_TOKENS.firstOrNull { currentEntry.startsWith(it, position) }
+
+    private fun entryTokenEndingAt(position: Int): String? =
+        ENTRY_TOKENS.firstOrNull { token ->
+            position >= token.length &&
+                currentEntry.regionMatches(position - token.length, token, 0, token.length)
+        }
 
     private fun load() {
         CalculatorPersistence.load(memoryFile) { savedLines ->
@@ -547,12 +683,35 @@ object CalculatorDisplayMemory {
     private const val RESULT_TOO_LARGE_ERROR = "Error: Result too large"
     private const val BINARY_OPERATORS = "+-*/^"
     private const val STORE_OPERATOR = "->"
+    private const val ANSWER_TOKEN = "Ans"
+    private const val SCIENTIFIC_EXPONENT_TOKEN = "EE"
     private const val COMPLEX_UNIT = 'i'
+    private const val PI_TOKEN = 'π'
+    private const val EULER_TOKEN = 'e'
+    private const val INVERSE_SINE = "sin⁻¹"
+    private const val INVERSE_COSINE = "cos⁻¹"
+    private const val INVERSE_TANGENT = "tan⁻¹"
+    private const val SQUARE_ROOT = "sqrt"
     private const val COMPLEX_ZERO_EPSILON = 1.0e-12
     private const val MAX_POWER_RESULT_CHARACTERS = 4_096L
+    private const val MAX_SCIENTIFIC_EXPONENT = 4_000
     private const val MAX_HISTORY_ENTRIES = 1_000
-    private val FUNCTIONS = setOf("sin", "cos", "tan", "log", "ln")
+    private val FUNCTIONS = listOf(
+        INVERSE_SINE,
+        INVERSE_COSINE,
+        INVERSE_TANGENT,
+        SQUARE_ROOT,
+        "sin",
+        "cos",
+        "tan",
+        "log",
+        "ln"
+    )
     private val TRIG_FUNCTIONS = setOf("sin", "cos", "tan")
+    private val AUTO_CLOSING_PREFIXES = FUNCTIONS + listOf("10^", "$EULER_TOKEN^")
+    private val ENTRY_TOKENS =
+        (FUNCTIONS.map { "$it(" } + listOf("10^(", "$EULER_TOKEN^(", ANSWER_TOKEN, SCIENTIFIC_EXPONENT_TOKEN))
+            .sortedByDescending(String::length)
     private val QUARTER_TURN_DEGREES = BigDecimal("90")
     private val FOUR = BigDecimal("4")
     private val CALCULATION_CONTEXT = MathContext(34, RoundingMode.HALF_UP)
@@ -563,7 +722,7 @@ object CalculatorDisplayMemory {
     private class ExpressionParser(
         private val expression: String,
         private val previousAnswer: BigDecimal?,
-        private val xValue: BigDecimal
+        private val variableValues: Map<CalculatorVariable, BigDecimal?>
     ) {
         private var index = 0
 
@@ -612,8 +771,10 @@ object CalculatorDisplayMemory {
         private fun startsPrimaryAt(position: Int): Boolean =
             position < expression.length && (
                 expression[position].isDigit() || expression[position] == '.' ||
-                    expression[position] == '(' || expression[position] == 'X' ||
-                    expression.startsWith("Ans", position) ||
+                    expression[position] == '(' ||
+                    CalculatorVariable.fromSymbol(expression[position]) != null ||
+                    expression[position] == PI_TOKEN || expression[position] == EULER_TOKEN ||
+                    expression.startsWith(ANSWER_TOKEN, position) ||
                     FUNCTIONS.any { expression.startsWith(it, position) }
                 )
 
@@ -678,14 +839,28 @@ object CalculatorDisplayMemory {
         }
 
         private fun parsePrimary(): BigDecimal {
-            if (expression.startsWith("Ans", index)) {
-                index += "Ans".length
+            if (expression.startsWith(ANSWER_TOKEN, index)) {
+                index += ANSWER_TOKEN.length
                 return checkNotNull(previousAnswer) { "No previous answer is available" }
             }
 
-            if (index < expression.length && expression[index] == 'X') {
+            if (index < expression.length) {
+                CalculatorVariable.fromSymbol(expression[index])?.let { variable ->
+                    index++
+                    return checkNotNull(variableValues[variable]) {
+                        "Complex variable cannot be evaluated as a real value"
+                    }
+                }
+            }
+
+            if (index < expression.length && expression[index] == PI_TOKEN) {
                 index++
-                return xValue
+                return BigDecimal.valueOf(Math.PI)
+            }
+
+            if (index < expression.length && expression[index] == EULER_TOKEN) {
+                index++
+                return BigDecimal.valueOf(Math.E)
             }
 
             FUNCTIONS.firstOrNull { expression.startsWith(it, index) }?.let { function ->
@@ -710,10 +885,35 @@ object CalculatorDisplayMemory {
                 return result
             }
 
-            val start = index
-            while (index < expression.length && (expression[index].isDigit() || expression[index] == '.')) index++
-            check(start != index) { "Expected a number" }
-            return BigDecimal(expression.substring(start, index))
+            return parseNumber()
+        }
+
+        private fun parseNumber(): BigDecimal {
+            val mantissaStart = index
+            while (index < expression.length && (expression[index].isDigit() || expression[index] == '.')) {
+                index++
+            }
+            check(mantissaStart != index) { "Expected a number" }
+            val mantissa = BigDecimal(expression.substring(mantissaStart, index))
+
+            if (!expression.startsWith(SCIENTIFIC_EXPONENT_TOKEN, index)) return mantissa
+            index += SCIENTIFIC_EXPONENT_TOKEN.length
+            val negative = index < expression.length && expression[index] == '-'
+            if (negative) index++
+            val exponentStart = index
+            while (index < expression.length && expression[index].isDigit()) index++
+            check(exponentStart != index) { "Expected scientific exponent digits" }
+            check(index == expression.length || expression[index] != '.') {
+                "Scientific exponent must be an integer"
+            }
+
+            val magnitude = expression.substring(exponentStart, index).toIntOrNull()
+                ?: throw CalculatorEvaluationException(RESULT_TOO_LARGE_ERROR)
+            val exponent = if (negative) -magnitude else magnitude
+            if (exponent !in -MAX_SCIENTIFIC_EXPONENT..MAX_SCIENTIFIC_EXPONENT) {
+                throw CalculatorEvaluationException(RESULT_TOO_LARGE_ERROR)
+            }
+            return mantissa.scaleByPowerOfTen(exponent)
         }
 
         private fun evaluateFunction(function: String, argument: BigDecimal): BigDecimal {
@@ -726,12 +926,19 @@ object CalculatorDisplayMemory {
                 "tan" -> Math.tan(angle)
                 "log" -> Math.log10(value)
                 "ln" -> Math.log(value)
+                INVERSE_SINE -> inverseAngle(Math.asin(value), usesDegrees)
+                INVERSE_COSINE -> inverseAngle(Math.acos(value), usesDegrees)
+                INVERSE_TANGENT -> inverseAngle(Math.atan(value), usesDegrees)
+                SQUARE_ROOT -> Math.sqrt(value)
                 else -> error("Unsupported calculator function: $function")
             }
             val normalizedResult = normalizeDegreeTrigIdentity(function, argument, result, usesDegrees)
             check(normalizedResult.isFinite()) { "Function result is outside the supported range" }
             return BigDecimal.valueOf(normalizedResult)
         }
+
+        private fun inverseAngle(radians: Double, usesDegrees: Boolean): Double =
+            if (usesDegrees) Math.toDegrees(radians) else radians
 
         private fun normalizeDegreeTrigIdentity(
             function: String,

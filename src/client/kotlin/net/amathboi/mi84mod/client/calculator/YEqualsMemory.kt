@@ -47,11 +47,11 @@ object YEqualsMemory {
         if (cursors[selectedIndex] < equations[selectedIndex].length) cursors[selectedIndex]++
     }
 
-    /** Calculator-style entry overwrites the character beneath the forward cursor. */
-    fun append(text: String) {
+    /** Calculator-style entry inserts or overwrites at the forward cursor. */
+    fun append(text: String, insertMode: Boolean = false) {
         val expression = equations[selectedIndex]
         val cursor = cursors[selectedIndex]
-        val replacedLength = if (cursor < expression.length) 1 else 0
+        val replacedLength = if (!insertMode && cursor < expression.length) 1 else 0
         if (expression.length - replacedLength + text.length > MAX_EXPRESSION_LENGTH) return
 
         equations[selectedIndex] = expression.removeRange(cursor, cursor + replacedLength)
