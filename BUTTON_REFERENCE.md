@@ -9,10 +9,11 @@ does not claim that planned or deferred behavior is currently implemented.
 - Normal is the default layer.
 - `2nd` selects the blue legend for one non-modifier key. Pressing `2nd` again cancels it.
 - `Alpha` selects the green legend for one non-modifier key. Pressing `Alpha` again cancels it.
-- A future `2nd` then `Alpha` action enables persistent A-LOCK. A visual indicator must be reviewed
-  before A-LOCK is implemented.
+- `2nd` then `Alpha` enables persistent A-LOCK, shown as a prefix in the gray mode header. Pressing
+  Alpha again cancels it.
 - Pressing the other modifier switches layers: Alpha then `2nd` selects 2nd, and 2nd then `Alpha`
-  will become A-LOCK rather than silently acting like one-shot Alpha.
+  enables A-LOCK rather than silently acting like one-shot Alpha. A temporary 2nd command while
+  A-LOCK is active returns to A-LOCK afterward.
 - A non-modifier key always consumes the active one-shot layer, including an unavailable or
   no-function mapping. Shifted input never falls through to Normal.
 - Menus use left/right to change tabs, up/down to move, Enter to select, Clear to cancel, and their
@@ -38,18 +39,18 @@ records the prerequisite subsystem and confirms the visual gate without repeatin
 | FORMAT | Graph renderer support for every option shown | Do not display decorative settings that have no runtime effect |
 | Graph CALC | Numerical graph-analysis primitives and interaction state | Review each operation's prompts, markers, cancellation, and errors separately |
 | INS indicator | Insert/overwrite editor state | INS may ship without an indicator; any indicator requires review |
-| A-LOCK indicator | General scalar Alpha input | Review activation, persistent state, cancellation, and the header indicator |
+| A-LOCK indicator | General scalar Alpha input | Reviewed and implemented 2026-07-26 |
 | LINK | A safe transfer format and local or remote transport | Review SEND and RECEIVE only after the transport is defined |
 | LIST | Typed list values, storage, evaluator operations, and editor | Review NAMES/OPS/MATH and list-editor states separately |
-| TEST/LOGIC/CONDITIONS | Relational and numeric-Boolean evaluator support | Review tabs, interval templates, and unavailable items |
-| ANGLE | Angle tokens/conversions and current angle-mode semantics | Review token rendering and polar/rectangular conversion use |
+| TEST/LOGIC/CONDITIONS | Relational and numeric-Boolean evaluator support | TEST/LOGIC reviewed and implemented; CONDITIONS remains unavailable pending editable-template review |
+| ANGLE | Angle tokens/conversions and current angle-mode semantics | Reviewed; degree/radian markers and coordinate conversions implemented, DMS rows unavailable |
 | DRAW/POINTS/STO | Graph overlay state plus picture/GDB storage for STO | Review drawing interactions separately from storage menus |
 | DISTR/DRAW | Numerically validated distribution functions; graph shading for DRAW | Review numeric and shading tabs separately; expose only stable operations |
 | MATRIX | Typed matrices, evaluator rules, storage, and editor | Review NAMES, MATH, EDIT, and MathPrint templates separately |
 | RCL | The typed variable domains offered by the prompt | Review selection, unavailable types, and insertion behavior |
 | MEM | Persistence ownership and recovery behavior for each item | Review reporting, confirmation, destructive, archive, and grouping flows separately |
 | OFF/ON | LCD power state distinct from overlay visibility | Review wake, cancellation, header, and inventory reopen behavior |
-| F1/F2/F3 and Alpha fraction template | Approved token/template primitives; matrices for F3 | Review each shortcut menu and each MathPrint template separately |
+| F1/F2/F3 and Alpha fraction template | Approved token/template primitives; matrices for F3 | F1/F2 overlay and FRAC templates reviewed and implemented; F3/F4 and direct Alpha fraction shortcut remain separately gated |
 | F5 SPECIAL | A specific implemented context such as graph interaction or program editing | Define that context's exact items here, then review it before implementation |
 | Numeric Solver / Alpha Enter SOLVE | Solver domain and reviewed Numeric Solver screen | SOLVE remains unavailable outside the solver |
 
@@ -90,7 +91,7 @@ records the prerequisite subsystem and confirms the visual gate without repeatin
 | `.` | Inserts a decimal point. |
 | `(−)` | Toggles the sign of the current operand; it is not the subtraction operator. |
 | `(` and `)` | Insert grouping parentheses. |
-| `,` | Inserts a comma. Evaluation remains partial until multi-argument functions exist. |
+| `,` | Inserts a comma. It separates arguments in the implemented scalar functions; unsupported function families remain deferred. |
 | `x²` | Squares the current operand or `Ans`. |
 | `x⁻¹` | Applies a reciprocal to the current operand or `Ans`. |
 | `sin`, `cos`, `tan`, `log`, `ln` | Insert the named function and an opening parenthesis. |
@@ -109,6 +110,28 @@ records the prerequisite subsystem and confirms the visual gate without repeatin
   Other real scalar variables are available to equations. A complex-valued variable makes that
   graph evaluation undefined.
 - Juxtaposed variables use implicit multiplication, such as `2A` and `AX`.
+
+### Implemented nonvisual evaluator foundations
+
+Phase 3 added expression primitives before exposing their deferred menus. Phase 4 now provides the
+reviewed TEST/LOGIC and partial ANGLE entry paths; MATH and DISTR remain deferred.
+
+- Arithmetic is evaluated before `=`, `≠`, `>`, `≥`, `<`, and `≤`. Relations are evaluated before
+  `and`; `or` and `xor` share the next precedence level and evaluate left to right. A relation or
+  Boolean operation returns numeric `1` or `0`.
+- Zero is false and every nonzero real or rectangular-complex value is true. Complex `=` and `≠`
+  compare both components; ordered comparisons of complex values report a syntax error.
+- Function calls accept comma-separated arguments and reject missing arguments, stray top-level
+  commas, and unsupported arities. Omitted trailing function parentheses are still completed.
+- `and`, `or`, and `xor` move, overwrite, and forward-delete as whole editor tokens.
+- `abs(x)` returns an absolute value or complex magnitude. `round(x)` rounds to ten significant
+  digits and `round(x,n)` rounds to 0–9 decimal places; both use half-up rounding.
+- `iPart(x)` truncates toward zero, `fPart(x)` returns `x-iPart(x)`, and `int(x)` floors.
+- `min` and `max` accept exactly two scalar arguments. `gcd` and `lcm` require two nonnegative
+  integers no larger than `1E12`. `remainder(a,b)` requires a nonnegative whole-number dividend and
+  a positive whole-number divisor.
+- Probability primitives remain deferred until a numerical library and accuracy strategy receive
+  separate approval. MathPrint templates and every menu presentation remain behind visual review.
 
 ## Unsupported Normal menus
 
@@ -343,7 +366,10 @@ indicator must be approved separately.
 
 #### 2nd Alpha: A-LOCK
 
-Enables persistent Alpha input until Alpha is pressed again. This needs a reviewed header indicator.
+Enables persistent Alpha input until Alpha is pressed again. The gray header begins with `A-LOCK`
+while it is active. Non-modifier Alpha commands and placeholders do not consume the lock. Pressing
+2nd temporarily selects one 2nd command, then returns to A-LOCK. Compact-menu navigation, numeric
+hotkeys, and direct view exits remain physical controls while locked.
 
 #### 2nd X,T,θ,n: LINK
 
@@ -364,6 +390,11 @@ operations.
 and `variance(`.
 
 #### 2nd Math: TEST
+
+This reviewed compact menu is implemented. Left/right changes tabs, up/down changes rows, Enter or
+a displayed numeric hotkey pastes an available token and returns to the originating Home, Y=, or
+Window editor, and Clear returns without editing. When opened from another view, selection returns
+to Home. Direct view keys cancel the menu and open their view.
 
 **TEST**
 
@@ -397,17 +428,30 @@ The CONDITIONS tab pastes interval templates into a piecewise condition:
 6. outside/closed or mixed-endpoint interval
 
 Internally, an interval is evaluated as its equivalent relations joined with `and` or `or`.
+The rows are currently visible but unavailable; selecting one leaves the menu open. Their editable
+multi-field template behavior requires a separate visual approval.
 
 #### 2nd Apps: ANGLE
 
+This reviewed single-tab compact menu shows all eight rows at once. It uses the same arrows,
+numeric-hotkey, Enter, Clear, origin-return, A-LOCK, and direct-view behavior as TEST. There is no
+bottom navigation guide.
+
 1. degree marker `°`
-2. DMS minute marker `'`
+2. DMS minute marker `'` — visible but unavailable
 3. radian marker `ʳ`
-4. `►DMS`
+4. `►DMS` — visible but unavailable
 5. `R►Pr(`
 6. `R►Pθ(`
 7. `P►Rx(`
 8. `P►Ry(`
+
+Postfix `°` interprets the preceding value as degrees and postfix `ʳ` interprets it as radians,
+converting to the active Angle Unit for the surrounding expression. Parenthesize a compound angle
+before applying a marker, such as `(π/2)ʳ`. `R►Pr(x,y)` returns radius, `R►Pθ(x,y)` returns the polar
+angle in the active Angle Unit, and `P►Rx(r,θ)` / `P►Ry(r,θ)` interpret θ in that unit. Minute entry
+and DMS output remain unavailable until the complete degree/minute/second grammar and presentation
+are approved.
 
 #### 2nd Prgm: DRAW
 
@@ -485,20 +529,43 @@ status recorded in `BUTTON_MATRIX.md`, and MathPrint templates remain separately
 
 ## Alpha layer
 
-### F1–F5 shortcut menus
+### F1–F5 function menus
 
-All shortcut menus are deferred for visual review.
+F1 and F2 use an approved function-menu overlay rather than the full-view compact menu used by
+TEST and ANGLE. The active calculator view remains visible behind a boxed option list. The active
+tab is shown along the bottom beside `FRAC`, `FUNC`, `MTRX`, and `YVAR`; Left and Right switch tabs.
+The option box grows with the active tab, so FRAC leaves most of the underlying view visible while
+FUNC uses most of the LCD.
 
-- **F1 FRAC**: fraction template, mixed-number template, improper/mixed conversion, and
-  fraction/decimal conversion.
-- **F2 FUNC**: absolute value, numerical derivative, numerical integral, summation, arbitrary-base
-  logarithm, square/nth root, permutations, combinations, and factorial.
+Home supports all four tabs. F1/F2 opened from another typeable view, currently Y= or Window, remain
+over that view and paste into its active editor. Opening them from a non-typeable view first returns
+to Home. `2nd` + Mode (Quit) closes this overlay without leaving its retained Home, Y=, or Window
+view. F3 MTRX and F4 YVAR remain visible tab placeholders until their later implementation.
+
+- **F1 FRAC**: fraction and mixed-number templates are available. The improper/mixed and
+  fraction/decimal conversion rows remain visible but unavailable. Template entry uses stacked
+  whole/numerator/denominator fields inline at the active text cursor. Fraction digits are smaller
+  than ordinary entry text, and the complete stacked fraction is about 50% taller than a normal
+  number. Completed templates and reduced answers keep the visible fraction bar instead of exposing
+  internal `frac(x,y)` text. A completed structured fraction is one cursor/overwrite/delete token.
+  The bar uses a half-logical-pixel render transform, is separated from the active field highlight,
+  and grows with the wider of the numerator or denominator. Left from immediately after a completed
+  fraction reopens its denominator; another Left selects its numerator (and then the whole-number
+  field for a mixed number). Inside each field, only the character under the forward cursor is
+  inverted; it uses the standard half-second blink and is positioned from the scaled glyph metrics
+  so repeated or wide digits remain centered. Left/Right, typing, and Delete operate on individual
+  elements. Recalling a fractional result from Home history restores the same
+  structured fraction instead of ordinary `/` division. A Home expression that uses a fraction
+  template defaults to a reduced fraction result unless the same expression contains decimal input.
+- **F2 FUNC**: absolute value, arbitrary-base logarithm, square/nth root, permutations,
+  combinations, and factorial are available. Numerical derivative, numerical integral, and
+  summation remain visible but unavailable.
 - **F3 MTRX**: quick MathPrint matrix templates with selectable row and column counts.
 - **F4 YVAR**: function variables such as `Y1`–`Y9` and `Y0`.
 - **F5 SPECIAL**: context-sensitive commands for an interactive graph, drawing operation, or program
   editor. It has no global fixed contents and does nothing where no special menu is available.
 
-Alpha X,T,θ,n opens a fraction template and is also deferred for visual review.
+Alpha X,T,θ,n remains deferred as a separate direct fraction-template shortcut.
 
 ### Letters and symbols
 

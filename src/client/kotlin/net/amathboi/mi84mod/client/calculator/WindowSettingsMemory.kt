@@ -84,18 +84,35 @@ object WindowSettingsMemory {
     fun selectNext() = select(selectedIndex + 1)
 
     fun moveCursorLeft() {
-        if (cursors[selectedIndex] > 0) cursors[selectedIndex]--
+        val cursor = cursors[selectedIndex]
+        if (cursor > 0) {
+            cursors[selectedIndex] =
+                ExpressionEditingTokens.structuredFractionEndingAt(values[selectedIndex], cursor)
+                    ?.let { cursor - it.length }
+                    ?: cursor - 1
+        }
     }
 
     fun moveCursorRight() {
-        if (cursors[selectedIndex] < values[selectedIndex].length) cursors[selectedIndex]++
+        val value = values[selectedIndex]
+        val cursor = cursors[selectedIndex]
+        if (cursor < value.length) {
+            cursors[selectedIndex] =
+                ExpressionEditingTokens.structuredFractionStartingAt(value, cursor)
+                    ?.let { cursor + it.length }
+                    ?: cursor + 1
+        }
     }
 
     /** Calculator-style entry inserts or overwrites at the forward cursor. */
     fun append(text: String, insertMode: Boolean = false) {
         val value = values[selectedIndex]
         val cursor = cursors[selectedIndex]
-        val replacedLength = if (!insertMode && cursor < value.length) 1 else 0
+        val replacedLength = if (!insertMode && cursor < value.length) {
+            ExpressionEditingTokens.structuredFractionStartingAt(value, cursor)?.length ?: 1
+        } else {
+            0
+        }
         if (value.length - replacedLength + text.length > MAX_VALUE_LENGTH) return
 
         values[selectedIndex] = value.removeRange(cursor, cursor + replacedLength)
@@ -104,11 +121,29 @@ object WindowSettingsMemory {
         save()
     }
 
+    fun replaceStructuredFraction(start: Int, original: String, replacement: String): Boolean {
+        val value = values[selectedIndex]
+        if (start !in 0..value.length ||
+            !value.regionMatches(start, original, 0, original.length) ||
+            value.length - original.length + replacement.length > MAX_VALUE_LENGTH
+        ) {
+            return false
+        }
+        values[selectedIndex] =
+            value.substring(0, start) + replacement +
+                value.substring(start + original.length)
+        cursors[selectedIndex] = start + replacement.length
+        save()
+        return true
+    }
+
     fun deleteAtCursor() {
         val value = values[selectedIndex]
         val cursor = cursors[selectedIndex]
         if (cursor < value.length) {
-            values[selectedIndex] = value.removeRange(cursor, cursor + 1)
+            val length =
+                ExpressionEditingTokens.structuredFractionStartingAt(value, cursor)?.length ?: 1
+            values[selectedIndex] = value.removeRange(cursor, cursor + length)
             save()
         }
     }

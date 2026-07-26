@@ -15,6 +15,8 @@ import net.amathboi.mi84mod.client.calculator.input.CalculatorKeyBindings
 import net.amathboi.mi84mod.client.calculator.input.CalculatorKeyLayout
 import net.amathboi.mi84mod.client.calculator.input.ModifierLayer
 import net.amathboi.mi84mod.client.calculator.ui.CalculatorView
+import net.amathboi.mi84mod.client.calculator.ui.CompactMenuId
+import net.amathboi.mi84mod.client.calculator.ui.FunctionMenuTab
 
 class CalculatorArchitectureTest {
     @BeforeTest
@@ -88,7 +90,9 @@ class CalculatorArchitectureTest {
             CalculatorKey.SQUARE to CalculatorCommand.InsertSquareRoot,
             CalculatorKey.COMMA to CalculatorCommand.InsertScientificExponent,
             CalculatorKey.ENTER to CalculatorCommand.RecallEntry,
-            CalculatorKey.DELETE to CalculatorCommand.ToggleInsertMode
+            CalculatorKey.DELETE to CalculatorCommand.ToggleInsertMode,
+            CalculatorKey.MATH to CalculatorCommand.OpenCompactMenu(CompactMenuId.TEST),
+            CalculatorKey.APPS to CalculatorCommand.OpenCompactMenu(CompactMenuId.ANGLE)
         )
         val implementedAlphaCommands = listOf(
             CalculatorKey.MATH,
@@ -119,6 +123,10 @@ class CalculatorArchitectureTest {
             CalculatorKey.DIGIT_2,
             CalculatorKey.DIGIT_3
         ).zip(CalculatorVariable.entries).toMap()
+        val implementedAlphaMenus = mapOf(
+            CalculatorKey.Y_EQUALS to CalculatorCommand.OpenFunctionMenu(FunctionMenuTab.FRAC),
+            CalculatorKey.WINDOW to CalculatorCommand.OpenFunctionMenu(FunctionMenuTab.FUNC)
+        )
         nonModifierKeys.forEach { key ->
             when {
                 key == CalculatorKey.MODE ->
@@ -135,7 +143,12 @@ class CalculatorArchitectureTest {
                         CalculatorKeyBindings.resolve(key, ModifierLayer.SECOND)
                     )
             }
-            if (key in implementedAlphaCommands) {
+            if (key in implementedAlphaMenus) {
+                assertEquals(
+                    implementedAlphaMenus.getValue(key),
+                    CalculatorKeyBindings.resolve(key, ModifierLayer.ALPHA)
+                )
+            } else if (key in implementedAlphaCommands) {
                 assertEquals(
                     CalculatorCommand.InsertVariable(implementedAlphaCommands.getValue(key)),
                     CalculatorKeyBindings.resolve(key, ModifierLayer.ALPHA)
@@ -189,6 +202,32 @@ class CalculatorArchitectureTest {
     }
 
     @Test
+    fun alphaLockPersistsAcrossCommandsAndTemporarySecondThenAlphaCancelsIt() {
+        val controller = CalculatorController()
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.SECOND))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ALPHA))
+
+        assertTrue(controller.state.alphaLocked)
+        assertEquals(ModifierLayer.NORMAL, controller.state.modifier)
+
+        assertIs<DispatchResult.Placeholder>(
+            controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_0))
+        )
+        assertTrue(controller.state.alphaLocked)
+        assertEquals(ModifierLayer.NORMAL, controller.state.modifier)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.SECOND))
+        assertIs<DispatchResult.Placeholder>(
+            controller.dispatch(CalculatorInputEvent(CalculatorKey.PROGRAM))
+        )
+        assertTrue(controller.state.alphaLocked)
+        assertEquals(ModifierLayer.NORMAL, controller.state.modifier)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ALPHA))
+        assertFalse(controller.state.alphaLocked)
+    }
+
+    @Test
     fun directViewKeysUseExplicitTransitionsAndResetTransientState() {
         val controller = CalculatorController()
         controller.state.historyNavigationPosition = 4
@@ -206,6 +245,32 @@ class CalculatorArchitectureTest {
 
         assertIs<DispatchResult.Unsupported>(result)
         assertEquals(CalculatorView.HOME, controller.state.view)
+    }
+
+    @Test
+    fun deferredPhaseFourMenusRemainIsolatedFromTheApprovedTestMenu() {
+        assertIs<CalculatorCommand.Unsupported>(
+            CalculatorKeyBindings.resolve(CalculatorKey.MATH, ModifierLayer.NORMAL)
+        )
+        assertEquals(
+            CalculatorCommand.OpenCompactMenu(CompactMenuId.TEST),
+            CalculatorKeyBindings.resolve(CalculatorKey.MATH, ModifierLayer.SECOND)
+        )
+        assertEquals(
+            CalculatorCommand.OpenCompactMenu(CompactMenuId.ANGLE),
+            CalculatorKeyBindings.resolve(CalculatorKey.APPS, ModifierLayer.SECOND)
+        )
+        assertEquals(
+            CalculatorCommand.OpenFunctionMenu(FunctionMenuTab.FRAC),
+            CalculatorKeyBindings.resolve(CalculatorKey.Y_EQUALS, ModifierLayer.ALPHA)
+        )
+        assertEquals(
+            CalculatorCommand.OpenFunctionMenu(FunctionMenuTab.FUNC),
+            CalculatorKeyBindings.resolve(CalculatorKey.WINDOW, ModifierLayer.ALPHA)
+        )
+        assertIs<CalculatorCommand.Placeholder>(
+            CalculatorKeyBindings.resolve(CalculatorKey.VARS, ModifierLayer.SECOND)
+        )
     }
 
     @Test

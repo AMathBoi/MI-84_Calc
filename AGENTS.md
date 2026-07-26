@@ -19,12 +19,15 @@
 | `src/client/kotlin/.../calculator/CalculatorGraphRenderer.kt` | Axes, functions, trace, and interactive zoom rendering |
 | `src/client/kotlin/.../calculator/input/CalculatorKey.kt` | Stable typed identities for all 50 physical keys |
 | `src/client/kotlin/.../calculator/input/CalculatorKeyLayout.kt` | Texture-relative physical hitboxes with no behavior |
-| `src/client/kotlin/.../calculator/input/CalculatorCommand.kt` | Typed Normal, Phase 1/2 2nd, and Alpha variable commands plus explicit remaining placeholders |
+| `src/client/kotlin/.../calculator/input/CalculatorCommand.kt` | Typed Normal, Phase 1/2 and approved Phase 4 2nd commands, Alpha variables, and explicit remaining placeholders |
 | `src/client/kotlin/.../calculator/controller/CalculatorController.kt` | Central input dispatch, view transitions, graph, trace, and zoom behavior |
 | `src/client/kotlin/.../calculator/controller/CalculatorViewControllers.kt` | Home, Y=, Window, and Mode input behavior |
-| `src/client/kotlin/.../calculator/ui/CalculatorUiState.kt` | Active view, modifier, history/ENTRY, insert mode, trace, and interactive zoom state |
+| `src/client/kotlin/.../calculator/ui/CalculatorUiState.kt` | Active view, modifier/A-LOCK, history/ENTRY, insert mode, compact/function menus, fraction template, trace, and interactive zoom state |
+| `src/client/kotlin/.../calculator/ui/CompactMenuState.kt` | Reusable non-Minecraft compact-menu definitions, tabs, items, availability, selection, and return target |
+| `src/client/kotlin/.../calculator/ui/FunctionMenuState.kt` | Bottom-tab F1–F4 overlay definitions, editor targets, typed actions, and transient structured fraction fields |
+| `src/client/kotlin/.../calculator/ExpressionEditingTokens.kt` | Shared atomic cursor recognition for completed structured fractions |
 | `src/client/kotlin/.../calculator/CalculatorPosition.kt` | In-memory calculator position shared between inventory sessions |
-| `src/client/kotlin/.../calculator/CalculatorDisplayMemory.kt` | Persistent input/history store and arithmetic expression evaluator |
+| `src/client/kotlin/.../calculator/CalculatorDisplayMemory.kt` | Persistent input/history store and real scalar expression evaluator |
 | `src/client/kotlin/.../calculator/CalculatorVariableMemory.kt` | Persistent real/rectangular-complex scalar A-Z/θ storage with legacy X import |
 | `src/client/kotlin/.../calculator/ComplexExpressionEvaluator.kt` | Principal-value complex arithmetic/parser fallback for rectangular complex mode |
 | `src/client/kotlin/.../calculator/CalculatorPersistence.kt` | Logged temp-file persistence with atomic replacement where supported |
@@ -54,7 +57,12 @@
   - Dragging is enabled only from the 44 px top strip.
   - `CalculatorKeyLayout` owns texture-relative hitboxes. Mouse clicks become a typed `CalculatorInputEvent` and enter through `CalculatorController.dispatch`; the calculator does not accept computer keyboard input.
   - Implemented primary keys include digits, arithmetic, decimal, sign, powers/reciprocal, parentheses, `sin`/`cos`/`tan`/`log`/`ln`, `X`, scalar `sto->variable`, comma, Clear, Enter, Del, cursor arrows, history navigation, Y=, Window, Zoom, Mode, Trace, and Graph.
-  - 2nd and Alpha are one-shot modifier layers. `2nd` + Mode is Quit and returns to Home. Phase 1 scalar 2nd mappings implement explicit `Ans`, `i`, `π`, `e`, inverse trig, `10^(`, `e^(`, `sqrt(`, and `EE`. Phase 2 adds ENTRY, INS, and typed Alpha A-Z/θ variables; every unresolved shifted meaning remains an explicit placeholder and cannot fall through to the primary action. Zoom retains its Alpha A-G shortcuts.
+  - 2nd and Alpha are normally one-shot modifier layers. `2nd` then Alpha enables persistent-session A-LOCK with a gray-header indicator; Alpha cancels it, and a temporary 2nd command returns to the lock. `2nd` + Mode is Quit and returns to Home. Phase 1 scalar 2nd mappings implement explicit `Ans`, `i`, `π`, `e`, inverse trig, `10^(`, `e^(`, `sqrt(`, and `EE`. Phase 2 adds ENTRY, INS, and typed Alpha A-Z/θ variables; every unresolved shifted meaning remains an explicit placeholder and cannot fall through to the primary action. Zoom retains its Alpha A-G shortcuts.
+  - The reviewed Phase 4 compact TEST menu exposes TEST relations and LOGIC tokens through tabs, arrows, numeric hotkeys, Enter, Clear, and direct-view exits. CONDITIONS rows are visible but unavailable pending editable-template review. `and`, `or`, and `xor` move, overwrite, and forward-delete as whole editor tokens. Available tokens return to the originating Home, Y=, or Window editor; other origins return to Home.
+  - The reviewed ANGLE menu shows all eight rows without scrolling. Degree/radian markers and `R►Pr(`, `R►Pθ(`, `P►Rx(`, and `P►Ry(` are implemented with active Angle Unit semantics. Minute notation and `►DMS` are visible but unavailable.
+  - Alpha Y= and Alpha Window open the reviewed F1 FRAC and F2 FUNC bottom-tab overlay. It retains Home, Y=, or Window behind the boxed options and inserts into that view; non-editable origins return to Home. Left/right switches among visible FRAC/FUNC/MTRX/YVAR tabs, while F3/F4 remain unavailable. `2nd` + Mode closes only this overlay and retains its underlying editor.
+  - FRAC supplies compact inline fraction and mixed-number fields at the active cursor. Numerator/denominator text is smaller so the stacked fraction is about 50% taller than an ordinary number. Its bar uses a half-logical-pixel vertical transform, is separated from cursor highlighting, and is sized to the wider field. Completed templates emit internal `frac`/`mixed` expressions, but the renderer keeps a visible stacked bar for entry/history and reduced results. Left immediately after a completed fraction reopens denominator-first editing, then moves to numerator and mixed whole-number fields; within a field, only the character under the blinking forward cursor is inverted and edited. The cursor uses unscaled glyph positions before the fraction transform so multi-digit fields stay centered. Outside that edit session the structured fraction remains one overwrite/delete token across Home, Y=, and Window. Recalling a fraction result reconstructs that structured token instead of ordinary `/` division. Home results reduce to a fraction unless the expression also contains a decimal point. The two conversion rows remain unavailable.
+  - FUNC exposes `abs`, `logBASE`, `sqrt`, `nthRoot`, `nPr`, `nCr`, and postfix factorial. Numerical derivative, numerical integral, and summation remain visible but unavailable.
   - It renders LCD text at half the built-in Minecraft font size within the source-texture bounds `(21, 87)` to `(418, 343)`: active input is left-aligned, completed input remains left-aligned, and its result is right-aligned below a divider. Up/down selects history rows; Enter recalls a selected non-error row into the current expression. `2nd` + Enter (ENTRY) instead replaces the edit line with submitted inputs newest-first.
   - The gray LCD header strip from source-texture `(21, 49)` to `(418, 84)` always shows the active Number Display, Decimal Display, Answers, Complex Number Format, and Angle Unit values as one row of white text on every LCD view.
   - Its LCD has direct, in-overlay `HOME`, `Y_EQUALS`, `WINDOW`, `ZOOM`, `MODE`, and `GRAPH` views. The Y=, Window, Zoom, Mode, and Graph keys switch directly between their views; `2nd` + Mode (Quit) returns to Home from any calculator view.
@@ -73,8 +81,9 @@
   - The expression editor has a forward-delete cursor. Entry normally replaces the token beneath the cursor; `2nd` + Del toggles a transient, indicator-free insert mode shared by Home, Y=, and Window. Recalled up/down history is still inserted at the cursor.
   - Recalling a history row that would exceed the 31-character input limit currently fails silently and exits history navigation.
   - `Ans` resolves to the most recent valid real or rectangular-complex result and can be inserted explicitly with `2nd` + `(−)`. In an empty input, `+`, `-`, `*`, `/`, and `^` begin an `Ans` expression for the next user operand; square and reciprocal apply to `Ans`. Raw real and imaginary result components are persisted separately so display rounding does not reduce later `Ans` precision.
-  - The real evaluator supports standard precedence, implicit multiplication (`8X`, `2(X+1)`, `3sin(X)`, `2π`, `2A`), automatic completion of omitted trailing function/template parentheses in both Home and graph/Y= evaluation, parentheses, unary minus, right-associative exponentiation, `π`, `e`, `EE` scientific notation, forward and inverse angle-mode-aware trig, `log`, `ln`, `10^(`, `e^(`, `sqrt(`, and persistent scalar variables.
+  - The real evaluator supports standard precedence, implicit multiplication (`8X`, `2(X+1)`, `3sin(X)`, `2π`, `2A`), automatic completion of omitted trailing function/template parentheses in both Home and graph/Y= evaluation, parentheses, unary minus, right-associative exponentiation, `π`, `e`, `EE` scientific notation, forward and inverse angle-mode-aware trig, `log`, `ln`, `10^(`, `e^(`, `sqrt(`, exact `frac`/`mixed`, `logBASE`, `nthRoot`, `nPr`, `nCr`, factorial, and persistent scalar variables.
   - When the real evaluator cannot represent a result and Mode is set to `a+bi`, `ComplexExpressionEvaluator` retries the complete expression with principal-value complex arithmetic. It supports arithmetic, powers, implicit multiplication, `Ans`, `i`, constants, scalar variables, parentheses, forward/inverse scientific functions, and square root. Rectangular results simplify unit coefficients (`i`, `-i`) and near-zero floating-point residue; for example, `sqrt(-1)` displays `i`.
+  - Phase 3 evaluator foundations add `=`, `≠`, `>`, `≥`, `<`, `≤`, numeric `and`/`or`/`xor`/`not(`, comma-separated arguments, and scalar `abs`, `round`, `iPart`, `fPart`, `int`, `min`, `max`, `gcd`, `lcm`, and `remainder`. Phase 4 exposes reviewed TEST/LOGIC and partial ANGLE entry paths; MATH and DISTR remain hidden, and probability primitives remain deferred pending an approved numerical strategy.
 - `CalculatorVariableMemory` saves A-Z and `θ` in `config/mi84_calc_scalar_variables.txt`.
   - Every scalar variable defaults to real zero; `expression→variable` stores real values or rectangular-complex values in `a+bi` mode.
   - X remains the graph coordinate during graph evaluation. Other real scalar variables may be used in graph equations; complex scalar values make that graph sample undefined.
@@ -104,6 +113,8 @@
 - Arithmetic evaluation for `+`, `-`, `*`, `/`, `^`, `x^2`, and `x^-1`, including `Ans`
 - Phase 1 scalar 2nd functions: explicit `Ans`, `i`, `π`, `e`, inverse trig, `10^(`, `e^(`, linear `sqrt(`, and `EE`
 - Phase 2 ENTRY recall, indicator-free INS editing, persistent scalar A-Z/θ storage, and Alpha variable input
+- Phase 3 nonvisual relations, numeric Boolean logic, multi-argument parsing, and core MATH/NUM scalar helpers
+- Phase 4 A-LOCK, compact TEST/LOGIC, partial ANGLE, and bottom-tab F1 FRAC/F2 FUNC overlays; dependent CONDITIONS, DMS, fraction-conversion, and numerical-calculus rows are visibly unavailable
 - `sin`, `cos`, `tan`, `log`, `ln`, scalar variables/storage, forward delete, cursor movement, history recall, implicit multiplication, and omitted function-closing-parenthesis completion
 - In-LCD Y= editor for nine colored expressions
 - Persistent Y= expressions across game restarts
@@ -117,7 +128,7 @@
 - In-LCD Zoom/Memory menu with preset, box, cursor-centered, fitted, fractional, previous, store/recall, and factor-selection zoom functionality
 - Typed physical-key layout and exhaustive primary-command mapping
 - Mouse-only calculator input events and central non-Minecraft controller
-- Explicit one-shot 2nd/Alpha modifier layers with typed Phase 1/2 mappings and placeholders
+- Explicit one-shot 2nd/Alpha modifier layers, persistent A-LOCK, and typed Phase 1/2 plus approved Phase 4 mappings/placeholders
 - 2nd + Mode Quit transition back to Home
 - Split widget, renderer, transient UI state, and per-view input controllers
 - Automated layout, overlap, mapping, modifier, and transition checks
@@ -127,7 +138,7 @@
 
 - Replace the documented 2nd/Alpha placeholders and unsupported primary commands one feature at a time
 - Add table features that use ΔX and TraceStep
-- Add multi-argument functions before treating the comma key as evaluable input
+- Add broader multi-argument function families only with their owning typed domains
 - Implement the stored non-rectangular Mode behaviors: graph types/order, polar complex display, split-screen layouts, fraction/exact-answer display, and statistics settings
 - Add a dedicated calculator font/character sprites if the built-in Minecraft font is no longer desired
 - Persist calculator position across game restarts

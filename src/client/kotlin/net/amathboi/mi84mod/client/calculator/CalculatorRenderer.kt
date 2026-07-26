@@ -6,6 +6,8 @@ import kotlin.math.roundToInt
 import net.amathboi.mi84mod.client.calculator.controller.CalculatorController
 import net.amathboi.mi84mod.client.calculator.input.ModifierLayer
 import net.amathboi.mi84mod.client.calculator.ui.CalculatorView
+import net.amathboi.mi84mod.client.calculator.ui.FractionTemplateState
+import net.amathboi.mi84mod.client.calculator.ui.FunctionMenuTab
 import net.amathboi.mi84mod.client.calculator.ui.ZoomTab
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphics
@@ -30,23 +32,38 @@ class CalculatorRenderer(private val controller: CalculatorController) {
         private const val MODE_INDICATOR_PADDING = 4
         // Keep the LCD font proportional to the calculator's new half-size footprint.
         private const val DISPLAY_TEXT_SCALE = 0.5f
+        private const val FRACTION_TEXT_SCALE = 0.28f
         private const val DISPLAY_LINE_HEIGHT = 6
         private const val DISPLAY_TEXT_COLOR = 0xFF1F1F1F.toInt()
         private const val DISPLAY_DIVIDER_COLOR = 0xFF555555.toInt()
         private const val DISPLAY_HIGHLIGHT_COLOR = 0xFF9A9A9A.toInt()
         private const val DISPLAY_INVERTED_TEXT_COLOR = 0xFFFFFFFF.toInt()
+        private const val DISPLAY_MENU_BACKGROUND_COLOR = 0xFFFFFFFF.toInt()
         private const val MODE_SELECTION_COLOR = 0xFF000000.toInt()
         private const val Y_EQUALS_VISIBLE_ROWS = 9
         private const val MODE_VISIBLE_ROWS = 10
         private const val ZOOM_VISIBLE_ROWS = 9
+        private const val COMPACT_MENU_VISIBLE_ROWS = 9
+        private const val FUNCTION_MENU_LINE_HEIGHT = 5
         // The Mode page can use the final strip of white LCD beneath the shared display bounds.
         private const val MODE_BOTTOM_EXTENSION = 10
         private const val MODE_SELECTION_PADDING = 1
+        private val RESULT_FRACTION_PATTERN = Regex("-?\\d+/-?\\d+")
 
     }
 
     private val state get() = controller.state
     private val graphRenderer = CalculatorGraphRenderer(controller)
+    private data class FractionAnchor(val x: Int, val lineY: Int, val suffix: String)
+    private data class DisplayFraction(
+        val start: Int,
+        val endExclusive: Int,
+        val whole: String?,
+        val numerator: String,
+        val denominator: String
+    )
+
+    private var fractionAnchor: FractionAnchor? = null
     private var x = 0
     private var y = 0
     private var width = 0
@@ -57,6 +74,7 @@ class CalculatorRenderer(private val controller: CalculatorController) {
         this.y = y
         this.width = width
         this.height = height
+        fractionAnchor = null
         renderModeIndicator(guiGraphics)
         when (state.view) {
             CalculatorView.HOME -> renderDisplay(guiGraphics)
@@ -65,8 +83,11 @@ class CalculatorRenderer(private val controller: CalculatorController) {
             CalculatorView.MODE -> renderModeDisplay(guiGraphics)
             CalculatorView.ZOOM -> renderZoomDisplay(guiGraphics)
             CalculatorView.ZOOM_FACTORS -> renderZoomFactorsDisplay(guiGraphics)
+            CalculatorView.COMPACT_MENU -> renderCompactMenuDisplay(guiGraphics)
             CalculatorView.GRAPH -> graphRenderer.render(guiGraphics, x, y, width, height)
         }
+        state.functionMenu?.let { renderFunctionMenuOverlay(guiGraphics) }
+        state.fractionTemplate?.let { renderFractionTemplateEditor(guiGraphics, it) }
     }
 
     /** Shows the five most useful active Mode values in the gray strip above every LCD view. */
@@ -79,7 +100,7 @@ class CalculatorRenderer(private val controller: CalculatorController) {
         val bottom = y + MODE_INDICATOR_BOTTOM * scaleY
         val font = Minecraft.getInstance().font
         val modifierText = when (state.modifier) {
-            ModifierLayer.NORMAL -> ""
+            ModifierLayer.NORMAL -> if (state.alphaLocked) "A-LOCK " else ""
             ModifierLayer.SECOND -> "2nd "
             ModifierLayer.ALPHA -> "Alpha "
         }
@@ -99,7 +120,6 @@ class CalculatorRenderer(private val controller: CalculatorController) {
         val right = (x + (DISPLAY_RIGHT - DISPLAY_PADDING) * scaleX).toInt()
         val top = (y + (DISPLAY_TOP + DISPLAY_PADDING) * scaleY).toInt()
         val bottom = (y + (DISPLAY_BOTTOM - DISPLAY_PADDING) * scaleY).toInt()
-        val font = Minecraft.getInstance().font
 
         var lineY = top
         val selectedLine =
@@ -131,15 +151,16 @@ class CalculatorRenderer(private val controller: CalculatorController) {
             if (selectedLine?.entryIndex == entryIndex && !selectedLine.isResult) {
                 guiGraphics.fill(left, lineY, right, lineY + DISPLAY_LINE_HEIGHT, DISPLAY_HIGHLIGHT_COLOR)
             }
-            drawDisplayText(guiGraphics, entry.input, left, lineY)
+            drawMathExpression(guiGraphics, entry.input, left, lineY)
             lineY += DISPLAY_LINE_HEIGHT
             if (selectedLine?.entryIndex == entryIndex && selectedLine.isResult) {
                 guiGraphics.fill(left, lineY, right, lineY + DISPLAY_LINE_HEIGHT, DISPLAY_HIGHLIGHT_COLOR)
             }
-            drawDisplayText(
+            val resultText = mathResultText(entry.result)
+            drawMathExpression(
                 guiGraphics,
-                entry.result,
-                right - (font.width(entry.result) * DISPLAY_TEXT_SCALE).toInt(),
+                resultText,
+                right - measureMathExpression(resultText),
                 lineY
             )
             lineY += DISPLAY_LINE_HEIGHT
@@ -149,8 +170,23 @@ class CalculatorRenderer(private val controller: CalculatorController) {
 
         // The new entry always starts at the left edge beneath the most recent divider.
         val currentEntry = CalculatorDisplayMemory.current()
-        drawDisplayText(guiGraphics, currentEntry, left, lineY)
-        if (state.historyNavigationPosition == 0) renderCursor(guiGraphics, currentEntry, left, lineY)
+        val homeTemplate = state.fractionTemplate?.takeIf {
+            it.targetView == CalculatorView.HOME
+        }
+        if (homeTemplate != null) {
+            val cursor = CalculatorDisplayMemory.cursorPosition()
+            val start = homeTemplate.replacementStart ?: cursor
+            val end = homeTemplate.originalToken?.let { start + it.length } ?: cursor
+            val prefix = currentEntry.substring(0, start)
+            drawMathExpression(guiGraphics, prefix, left, lineY)
+            fractionAnchor =
+                FractionAnchor(left + measureMathExpression(prefix), lineY, currentEntry.substring(end))
+        } else {
+            drawMathExpression(guiGraphics, currentEntry, left, lineY)
+            if (state.historyNavigationPosition == 0) {
+                renderCursor(guiGraphics, currentEntry, left, lineY)
+            }
+        }
     }
 
     /** Draws all nine Y= equations inside the calculator LCD. */
@@ -172,8 +208,27 @@ class CalculatorRenderer(private val controller: CalculatorController) {
             drawDisplayText(guiGraphics, label, labelLeft, lineY)
             val expressionLeft = labelLeft + (font.width(label) * DISPLAY_TEXT_SCALE).toInt() + 3
             val expression = YEqualsMemory.equation(equationIndex)
-            drawDisplayText(guiGraphics, expression, expressionLeft, lineY + 0.5f)
-            if (equationIndex == YEqualsMemory.selectedIndex) {
+            val yEqualsTemplate = state.fractionTemplate?.takeIf {
+                it.targetView == CalculatorView.Y_EQUALS &&
+                    equationIndex == YEqualsMemory.selectedIndex
+            }
+            if (yEqualsTemplate != null) {
+                val cursor = YEqualsMemory.cursor(equationIndex)
+                val start = yEqualsTemplate.replacementStart ?: cursor
+                val end = yEqualsTemplate.originalToken?.let { start + it.length } ?: cursor
+                val prefix = expression.substring(0, start)
+                drawMathExpression(guiGraphics, prefix, expressionLeft, lineY)
+                fractionAnchor = FractionAnchor(
+                    expressionLeft + measureMathExpression(prefix),
+                    lineY,
+                    expression.substring(end)
+                )
+            } else {
+                drawMathExpression(guiGraphics, expression, expressionLeft, lineY)
+            }
+            if (equationIndex == YEqualsMemory.selectedIndex &&
+                state.fractionTemplate?.targetView != CalculatorView.Y_EQUALS
+            ) {
                 renderYEqualsCursor(guiGraphics, expression, expressionLeft, lineY)
             }
         }
@@ -194,8 +249,24 @@ class CalculatorRenderer(private val controller: CalculatorController) {
             drawDisplayText(guiGraphics, label, left, lineY)
             val valueLeft = left + (font.width(label) * DISPLAY_TEXT_SCALE).toInt() + 3
             val value = WindowSettingsMemory.value(settingIndex)
-            drawDisplayText(guiGraphics, value, valueLeft, lineY + 0.5f)
-            if (settingIndex == WindowSettingsMemory.selectedIndex) {
+            val windowTemplate = state.fractionTemplate?.takeIf {
+                it.targetView == CalculatorView.WINDOW &&
+                    settingIndex == WindowSettingsMemory.selectedIndex
+            }
+            if (windowTemplate != null) {
+                val cursor = WindowSettingsMemory.cursor(settingIndex)
+                val start = windowTemplate.replacementStart ?: cursor
+                val end = windowTemplate.originalToken?.let { start + it.length } ?: cursor
+                val prefix = value.substring(0, start)
+                drawMathExpression(guiGraphics, prefix, valueLeft, lineY)
+                fractionAnchor =
+                    FractionAnchor(valueLeft + measureMathExpression(prefix), lineY, value.substring(end))
+            } else {
+                drawMathExpression(guiGraphics, value, valueLeft, lineY)
+            }
+            if (settingIndex == WindowSettingsMemory.selectedIndex &&
+                state.fractionTemplate?.targetView != CalculatorView.WINDOW
+            ) {
                 renderWindowCursor(guiGraphics, value, valueLeft, lineY)
             }
         }
@@ -309,7 +380,13 @@ class CalculatorRenderer(private val controller: CalculatorController) {
         }
     }
 
-    private fun renderInvertedRow(guiGraphics: GuiGraphics, text: String, left: Int, lineY: Int) {
+    private fun renderInvertedRow(
+        guiGraphics: GuiGraphics,
+        text: String,
+        left: Int,
+        lineY: Int,
+        textColor: Int = DISPLAY_INVERTED_TEXT_COLOR
+    ) {
         val textWidth =
             (Minecraft.getInstance().font.width(text) * DISPLAY_TEXT_SCALE).toInt().coerceAtLeast(2)
         guiGraphics.fill(
@@ -319,7 +396,7 @@ class CalculatorRenderer(private val controller: CalculatorController) {
             lineY + DISPLAY_LINE_HEIGHT,
             MODE_SELECTION_COLOR
         )
-        drawDisplayText(guiGraphics, text, left, lineY, DISPLAY_INVERTED_TEXT_COLOR)
+        drawDisplayText(guiGraphics, text, left, lineY, textColor)
     }
 
     private fun zoomDisplayBottom(): Int {
@@ -346,6 +423,409 @@ class CalculatorRenderer(private val controller: CalculatorController) {
         }
     }
 
+    /** Draws approved compact token menus without owning navigation or insertion behavior. */
+    private fun renderCompactMenuDisplay(guiGraphics: GuiGraphics) {
+        val menu = state.compactMenu ?: return
+        val scaleX = width.toFloat() / TEXTURE_WIDTH
+        val scaleY = height.toFloat() / TEXTURE_HEIGHT
+        val clipLeft = (x + DISPLAY_LEFT * scaleX).toInt()
+        val clipTop = (y + DISPLAY_TOP * scaleY).toInt()
+        val left = (x + (DISPLAY_LEFT + DISPLAY_PADDING) * scaleX).toInt()
+        val right = (x + (DISPLAY_RIGHT - DISPLAY_PADDING) * scaleX).toInt()
+        val top = (y + (DISPLAY_TOP + DISPLAY_PADDING) * scaleY).toInt()
+        val bottom = zoomDisplayBottom()
+        val font = Minecraft.getInstance().font
+
+        // Leave the outer display padding inside the scissor so selected tabs are centered in
+        // their inverted box instead of clipping its top and left padding.
+        guiGraphics.enableScissor(clipLeft, clipTop, right, bottom)
+        var tabLeft = left
+        menu.definition.tabs.forEachIndexed { index, tab ->
+            drawZoomTab(guiGraphics, tab.label, tabLeft, top, menu.selectedTabIndex == index)
+            tabLeft += (font.width("${tab.label}   ") * DISPLAY_TEXT_SCALE).toInt()
+        }
+
+        val items = menu.selectedTab.items
+        val firstVisibleIndex = (menu.selectedItemIndex - COMPACT_MENU_VISIBLE_ROWS / 2)
+            .coerceIn(0, (items.size - COMPACT_MENU_VISIBLE_ROWS).coerceAtLeast(0))
+        repeat(COMPACT_MENU_VISIBLE_ROWS) { visibleRow ->
+            val itemIndex = firstVisibleIndex + visibleRow
+            if (itemIndex >= items.size) return@repeat
+            val item = items[itemIndex]
+            val suffix = if (item.available) "" else " [deferred]"
+            val rowText = "${item.hotkey}: ${item.label}$suffix"
+            val lineY = top + (visibleRow + 1) * DISPLAY_LINE_HEIGHT
+            when {
+                itemIndex == menu.selectedItemIndex ->
+                    renderInvertedRow(
+                        guiGraphics,
+                        rowText,
+                        left,
+                        lineY,
+                        if (item.available) DISPLAY_INVERTED_TEXT_COLOR else DISPLAY_HIGHLIGHT_COLOR
+                    )
+                item.available -> drawDisplayText(guiGraphics, rowText, left, lineY)
+                else -> drawDisplayText(guiGraphics, rowText, left, lineY, DISPLAY_HIGHLIGHT_COLOR)
+            }
+        }
+
+        guiGraphics.disableScissor()
+    }
+
+    /** Draws the F1–F4 option box and bottom tabs over the retained editable view. */
+    private fun renderFunctionMenuOverlay(guiGraphics: GuiGraphics) {
+        val menu = state.functionMenu ?: return
+        val scaleX = width.toFloat() / TEXTURE_WIDTH
+        val scaleY = height.toFloat() / TEXTURE_HEIGHT
+        val left = (x + (DISPLAY_LEFT + DISPLAY_PADDING) * scaleX).toInt()
+        val right = (x + (DISPLAY_RIGHT - DISPLAY_PADDING) * scaleX).toInt()
+        val top = (y + (DISPLAY_TOP + DISPLAY_PADDING) * scaleY).toInt()
+        val bottom = zoomDisplayBottom()
+        val tabLineY = bottom - DISPLAY_LINE_HEIGHT
+        val menuBottom = tabLineY - 1
+        val menuTop =
+            (menuBottom - menu.items.size * FUNCTION_MENU_LINE_HEIGHT - 2).coerceAtLeast(top)
+
+        guiGraphics.fill(left, menuTop, right, menuBottom, DISPLAY_MENU_BACKGROUND_COLOR)
+        guiGraphics.fill(left, menuTop, right, menuTop + 1, MODE_SELECTION_COLOR)
+        guiGraphics.fill(left, menuBottom - 1, right, menuBottom, MODE_SELECTION_COLOR)
+        guiGraphics.fill(left, menuTop, left + 1, menuBottom, MODE_SELECTION_COLOR)
+        guiGraphics.fill(right - 1, menuTop, right, menuBottom, MODE_SELECTION_COLOR)
+
+        menu.items.forEachIndexed { index, item ->
+            val suffix = if (item.available) "" else " [deferred]"
+            val hotkey = item.hotkey.takeIf(String::isNotEmpty)?.let { "$it: " }.orEmpty()
+            val rowText = "$hotkey${item.label}$suffix"
+            val lineY = menuTop + 1 + index * FUNCTION_MENU_LINE_HEIGHT
+            if (index == menu.selectedItemIndex) {
+                guiGraphics.fill(
+                    left + 1,
+                    lineY,
+                    right - 1,
+                    (lineY + FUNCTION_MENU_LINE_HEIGHT).coerceAtMost(menuBottom - 1),
+                    MODE_SELECTION_COLOR
+                )
+                drawDisplayText(
+                    guiGraphics,
+                    rowText,
+                    left + 2,
+                    lineY,
+                    if (item.available) DISPLAY_INVERTED_TEXT_COLOR else DISPLAY_HIGHLIGHT_COLOR
+                )
+            } else {
+                drawDisplayText(
+                    guiGraphics,
+                    rowText,
+                    left + 2,
+                    lineY,
+                    if (item.available) DISPLAY_TEXT_COLOR else DISPLAY_HIGHLIGHT_COLOR
+                )
+            }
+        }
+
+        guiGraphics.fill(left, tabLineY - 1, right, bottom, DISPLAY_MENU_BACKGROUND_COLOR)
+        val font = Minecraft.getInstance().font
+        var tabLeft = left
+        FunctionMenuTab.entries.forEach { tab ->
+            drawZoomTab(
+                guiGraphics,
+                tab.label,
+                tabLeft,
+                tabLineY,
+                menu.selectedTab == tab
+            )
+            tabLeft += (font.width("${tab.label}  ") * DISPLAY_TEXT_SCALE).toInt()
+        }
+    }
+
+    /** Draws the active fraction compactly at the insertion cursor without replacing the view. */
+    private fun renderFractionTemplateEditor(
+        guiGraphics: GuiGraphics,
+        template: FractionTemplateState
+    ) {
+        val anchor = fractionAnchor ?: return
+        val font = Minecraft.getInstance().font
+        var fractionLeft = anchor.x
+
+        var numeratorIndex = 0
+        var denominatorIndex = 1
+        if (template.mixedNumber) {
+            val whole = template.field(0)
+            val displayedWhole = whole.ifEmpty { "□" }
+            val wholeWidth =
+                (font.width(displayedWhole) * DISPLAY_TEXT_SCALE).roundToInt().coerceAtLeast(4) + 2
+            renderInlineTemplateField(
+                guiGraphics,
+                whole,
+                fractionLeft,
+                anchor.lineY,
+                wholeWidth,
+                template.selectedFieldIndex == 0,
+                template.cursor(0),
+                DISPLAY_TEXT_SCALE
+            )
+            fractionLeft += wholeWidth + 1
+            numeratorIndex = 1
+            denominatorIndex = 2
+        }
+
+        val numerator = template.field(numeratorIndex)
+        val denominator = template.field(denominatorIndex)
+        val fractionWidth =
+            maxOf(
+                font.width(numerator.ifEmpty { "□" }),
+                font.width(denominator.ifEmpty { "□" })
+            )
+                .let { (it * FRACTION_TEXT_SCALE).roundToInt().coerceAtLeast(3) + 2 }
+        renderInlineTemplateField(
+            guiGraphics,
+            numerator,
+            fractionLeft,
+            anchor.lineY - 3,
+            fractionWidth,
+            template.selectedFieldIndex == numeratorIndex,
+            template.cursor(numeratorIndex),
+            FRACTION_TEXT_SCALE
+        )
+        drawFractionBar(guiGraphics, fractionLeft, anchor.lineY, fractionWidth)
+        renderInlineTemplateField(
+            guiGraphics,
+            denominator,
+            fractionLeft,
+            anchor.lineY + 2,
+            fractionWidth,
+            template.selectedFieldIndex == denominatorIndex,
+            template.cursor(denominatorIndex),
+            FRACTION_TEXT_SCALE
+        )
+        drawMathExpression(
+            guiGraphics,
+            anchor.suffix,
+            fractionLeft + fractionWidth + 1,
+            anchor.lineY
+        )
+    }
+
+    private fun renderInlineTemplateField(
+        guiGraphics: GuiGraphics,
+        text: String,
+        left: Int,
+        lineY: Int,
+        width: Int,
+        selected: Boolean,
+        cursorPosition: Int,
+        scale: Float
+    ) {
+        val font = Minecraft.getInstance().font
+        val displayedText = text.ifEmpty { "□" }
+        val textWidth = (font.width(displayedText) * scale).roundToInt()
+        val textLeft = left + ((width - textWidth) / 2).coerceAtLeast(0)
+        drawScaledDisplayText(
+            guiGraphics,
+            displayedText,
+            textLeft,
+            lineY,
+            scale,
+            DISPLAY_TEXT_COLOR
+        )
+        if (!selected || (System.currentTimeMillis() / 500L) % 2L != 0L) return
+
+        val cursor = cursorPosition.coerceIn(0, text.length)
+        val unscaledCursorLeft = font.width(text.substring(0, cursor))
+        val cursorText = when {
+            text.isEmpty() -> displayedText
+            cursor < text.length -> text[cursor].toString()
+            else -> ""
+        }
+        val unscaledCursorWidth = font.width(cursorText.ifEmpty { "0" }).coerceAtLeast(1)
+        val pose = guiGraphics.pose()
+        pose.pushPose()
+        pose.translate(textLeft.toFloat(), lineY.toFloat(), 0f)
+        pose.scale(scale, scale, 1f)
+        guiGraphics.fill(
+            unscaledCursorLeft,
+            0,
+            unscaledCursorLeft + unscaledCursorWidth,
+            font.lineHeight,
+            MODE_SELECTION_COLOR
+        )
+        if (cursorText.isNotEmpty()) {
+            guiGraphics.drawString(
+                font,
+                cursorText,
+                unscaledCursorLeft,
+                0,
+                DISPLAY_INVERTED_TEXT_COLOR,
+                false
+            )
+        }
+        pose.popPose()
+    }
+
+    /** Draws linear text while replacing completed frac/mixed tokens with a compact stacked form. */
+    private fun drawMathExpression(
+        guiGraphics: GuiGraphics,
+        text: String,
+        left: Int,
+        lineY: Int
+    ): Int {
+        val fraction = findDisplayFraction(text)
+        if (fraction == null) {
+            drawDisplayText(guiGraphics, text, left, lineY)
+            return measureDisplayText(text)
+        }
+
+        var drawLeft = left
+        val prefix = text.substring(0, fraction.start)
+        drawDisplayText(guiGraphics, prefix, drawLeft, lineY)
+        drawLeft += measureDisplayText(prefix)
+
+        fraction.whole?.let { whole ->
+            drawDisplayText(guiGraphics, whole, drawLeft, lineY)
+            drawLeft += measureDisplayText(whole) + 1
+        }
+
+        val fractionWidth = completedFractionWidth(fraction.numerator, fraction.denominator)
+        drawCompletedFraction(
+            guiGraphics,
+            fraction.numerator,
+            fraction.denominator,
+            drawLeft,
+            lineY,
+            fractionWidth
+        )
+        drawLeft += fractionWidth + 1
+
+        val suffix = text.substring(fraction.endExclusive)
+        drawLeft += drawMathExpression(guiGraphics, suffix, drawLeft, lineY)
+        return drawLeft - left
+    }
+
+    private fun measureMathExpression(text: String): Int {
+        val fraction = findDisplayFraction(text) ?: return measureDisplayText(text)
+        return measureDisplayText(text.substring(0, fraction.start)) +
+            (fraction.whole?.let(::measureDisplayText) ?: 0) +
+            (if (fraction.whole == null) 0 else 1) +
+            completedFractionWidth(fraction.numerator, fraction.denominator) +
+            1 +
+            measureMathExpression(text.substring(fraction.endExclusive))
+    }
+
+    private fun drawCompletedFraction(
+        guiGraphics: GuiGraphics,
+        numerator: String,
+        denominator: String,
+        left: Int,
+        lineY: Int,
+        width: Int
+    ) {
+        val font = Minecraft.getInstance().font
+        val numeratorWidth = (font.width(numerator) * FRACTION_TEXT_SCALE).roundToInt()
+        val denominatorWidth = (font.width(denominator) * FRACTION_TEXT_SCALE).roundToInt()
+        drawScaledDisplayText(
+            guiGraphics,
+            numerator,
+            left + ((width - numeratorWidth) / 2).coerceAtLeast(0),
+            lineY - 3,
+            FRACTION_TEXT_SCALE
+        )
+        drawFractionBar(guiGraphics, left, lineY, width)
+        drawScaledDisplayText(
+            guiGraphics,
+            denominator,
+            left + ((width - denominatorWidth) / 2).coerceAtLeast(0),
+            lineY + 2,
+            FRACTION_TEXT_SCALE
+        )
+    }
+
+    private fun drawFractionBar(
+        guiGraphics: GuiGraphics,
+        left: Int,
+        lineY: Int,
+        fieldWidth: Int
+    ) {
+        val pose = guiGraphics.pose()
+        pose.pushPose()
+        pose.translate(left.toFloat(), lineY.toFloat(), 0f)
+        pose.scale(1f, 0.5f, 1f)
+        guiGraphics.fill(
+            0,
+            0,
+            fieldWidth,
+            1,
+            DISPLAY_TEXT_COLOR
+        )
+        pose.popPose()
+    }
+
+    private fun completedFractionWidth(numerator: String, denominator: String): Int {
+        val font = Minecraft.getInstance().font
+        return maxOf(font.width(numerator), font.width(denominator))
+            .let { (it * FRACTION_TEXT_SCALE).roundToInt().coerceAtLeast(3) + 2 }
+    }
+
+    private fun findDisplayFraction(text: String): DisplayFraction? {
+        val fractionStart = text.indexOf("frac(").takeIf { it >= 0 }
+        val mixedStart = text.indexOf("mixed(").takeIf { it >= 0 }
+        val start = listOfNotNull(fractionStart, mixedStart).minOrNull() ?: return null
+        val function = if (mixedStart == start) "mixed" else "frac"
+        val openIndex = start + function.length
+        var depth = 0
+        var closeIndex = -1
+        for (index in openIndex until text.length) {
+            when (text[index]) {
+                '(' -> depth++
+                ')' -> {
+                    depth--
+                    if (depth == 0) {
+                        closeIndex = index
+                        break
+                    }
+                }
+            }
+        }
+        if (closeIndex < 0) return null
+
+        val arguments = splitTopLevelArguments(text.substring(openIndex + 1, closeIndex))
+        return when {
+            function == "frac" && arguments.size == 2 ->
+                DisplayFraction(start, closeIndex + 1, null, arguments[0], arguments[1])
+            function == "mixed" && arguments.size == 3 ->
+                DisplayFraction(start, closeIndex + 1, arguments[0], arguments[1], arguments[2])
+            else -> null
+        }
+    }
+
+    private fun splitTopLevelArguments(arguments: String): List<String> {
+        val result = mutableListOf<String>()
+        var depth = 0
+        var start = 0
+        arguments.forEachIndexed { index, character ->
+            when (character) {
+                '(' -> depth++
+                ')' -> depth--
+                ',' -> if (depth == 0) {
+                    result += arguments.substring(start, index)
+                    start = index + 1
+                }
+            }
+        }
+        result += arguments.substring(start)
+        return result
+    }
+
+    private fun mathResultText(result: String): String =
+        if (RESULT_FRACTION_PATTERN.matches(result)) {
+            val (numerator, denominator) = result.split('/', limit = 2)
+            "frac($numerator,$denominator)"
+        } else {
+            result
+        }
+
+    private fun measureDisplayText(text: String): Int =
+        (Minecraft.getInstance().font.width(text) * DISPLAY_TEXT_SCALE).toInt()
+
     fun graphDisplayAspect(width: Int, height: Int): Double =
         graphRenderer.displayAspect(width, height)
 
@@ -355,7 +835,7 @@ class CalculatorRenderer(private val controller: CalculatorController) {
 
         val font = Minecraft.getInstance().font
         val cursorPosition = CalculatorDisplayMemory.cursorPosition()
-        val cursorLeft = left + (font.width(text.substring(0, cursorPosition)) * DISPLAY_TEXT_SCALE).toInt()
+        val cursorLeft = left + measureMathExpression(text.substring(0, cursorPosition))
         val tokenWidth = if (cursorPosition == text.length) font.width("0") else {
             font.width(text[cursorPosition].toString())
         }
@@ -375,7 +855,7 @@ class CalculatorRenderer(private val controller: CalculatorController) {
 
         val font = Minecraft.getInstance().font
         val cursorPosition = YEqualsMemory.cursor(YEqualsMemory.selectedIndex)
-        val cursorLeft = left + (font.width(text.substring(0, cursorPosition)) * DISPLAY_TEXT_SCALE).toInt()
+        val cursorLeft = left + measureMathExpression(text.substring(0, cursorPosition))
         val tokenWidth = if (cursorPosition == text.length) font.width("0") else font.width(text[cursorPosition].toString())
         guiGraphics.fill(
             cursorLeft,
@@ -391,7 +871,7 @@ class CalculatorRenderer(private val controller: CalculatorController) {
 
         val font = Minecraft.getInstance().font
         val cursorPosition = WindowSettingsMemory.cursor(WindowSettingsMemory.selectedIndex)
-        val cursorLeft = left + (font.width(text.substring(0, cursorPosition)) * DISPLAY_TEXT_SCALE).toInt()
+        val cursorLeft = left + measureMathExpression(text.substring(0, cursorPosition))
         val tokenWidth = if (cursorPosition == text.length) font.width("0") else font.width(text[cursorPosition].toString())
         guiGraphics.fill(
             cursorLeft,
@@ -447,10 +927,32 @@ class CalculatorRenderer(private val controller: CalculatorController) {
         y: Float,
         color: Int = DISPLAY_TEXT_COLOR
     ) {
+        drawScaledDisplayText(guiGraphics, text, x, y, DISPLAY_TEXT_SCALE, color)
+    }
+
+    private fun drawScaledDisplayText(
+        guiGraphics: GuiGraphics,
+        text: String,
+        x: Int,
+        y: Int,
+        scale: Float,
+        color: Int = DISPLAY_TEXT_COLOR
+    ) {
+        drawScaledDisplayText(guiGraphics, text, x, y.toFloat(), scale, color)
+    }
+
+    private fun drawScaledDisplayText(
+        guiGraphics: GuiGraphics,
+        text: String,
+        x: Int,
+        y: Float,
+        scale: Float,
+        color: Int = DISPLAY_TEXT_COLOR
+    ) {
         val pose = guiGraphics.pose()
         pose.pushPose()
         pose.translate(x.toFloat(), y, 0f)
-        pose.scale(DISPLAY_TEXT_SCALE, DISPLAY_TEXT_SCALE, 1f)
+        pose.scale(scale, scale, 1f)
         guiGraphics.drawString(Minecraft.getInstance().font, text, 0, 0, color, false)
         pose.popPose()
     }

@@ -2,6 +2,7 @@ package net.amathboi.mi84mod.client.calculator
 
 import net.fabricmc.loader.api.FabricLoader
 import java.math.BigDecimal
+import java.math.BigInteger
 import java.math.MathContext
 import java.math.RoundingMode
 import java.nio.file.Path
@@ -73,6 +74,15 @@ object CalculatorDisplayMemory {
         val entry = submittedEntries[entryIndex]
         val isResult = position % 2 == 1
         return HistoryLine(entryIndex, isResult, if (isResult) entry.result else entry.input)
+    }
+
+    /** Restores fraction results as structured editor tokens instead of ordinary division text. */
+    fun editableTextForHistoryLine(line: HistoryLine): String {
+        val entry = submittedEntries.getOrNull(line.entryIndex) ?: return line.text
+        if (!line.isResult) return entry.input
+        if (!FRACTION_RESULT_PATTERN.matches(entry.result)) return entry.result
+        val (numerator, denominator) = entry.result.split('/', limit = 2)
+        return "$FRACTION_FUNCTION($numerator,$denominator)"
     }
 
     /** Adds recalled history without overwriting the token currently under the edit cursor. */
@@ -219,12 +229,29 @@ object CalculatorDisplayMemory {
         }
     }
 
-    /**
-     * Keeps comma entry visible for future multi-argument functions. It currently evaluates as an
-     * error because no multi-argument functions have been implemented.
-     */
+    /** Adds an argument separator for supported multi-argument functions. */
     fun appendComma(insertMode: Boolean = false) {
         appendText(",", insertMode)
+    }
+
+    /** Pastes an approved compact-menu token through the active Home editor mode. */
+    fun appendMenuToken(token: String, insertMode: Boolean = false) {
+        appendText(token, insertMode)
+    }
+
+    fun replaceStructuredFraction(start: Int, original: String, replacement: String): Boolean {
+        if (start !in 0..currentEntry.length ||
+            !currentEntry.regionMatches(start, original, 0, original.length) ||
+            currentEntry.length - original.length + replacement.length > MAX_CHARACTERS
+        ) {
+            return false
+        }
+        currentEntry =
+            currentEntry.substring(0, start) + replacement +
+                currentEntry.substring(start + original.length)
+        cursor = start + replacement.length
+        save()
+        return true
     }
 
     /**
@@ -244,14 +271,6 @@ object CalculatorDisplayMemory {
     /** Evaluates the entered expression and adds both the input and answer to display history. */
     fun submit() {
         if (currentEntry.isEmpty()) return
-
-        if (currentEntry.contains(',')) {
-            recordSubmission(SubmittedEntry(currentEntry, SYNTAX_ERROR))
-            currentEntry = ""
-            cursor = 0
-            save()
-            return
-        }
 
         if (currentEntry.contains(STORE_OPERATOR)) {
             val result = evaluateAssignment(currentEntry)
@@ -313,7 +332,10 @@ object CalculatorDisplayMemory {
 
     private fun evaluate(expression: String): EvaluationResult {
         val realEvaluation = runCatching { evaluateValue(expression) }
-        realEvaluation.getOrNull()?.let { value -> return EvaluationResult(format(value), value) }
+        realEvaluation.getOrNull()?.let { value ->
+            val display = preferredFractionDisplay(expression) ?: format(value)
+            return EvaluationResult(display, value)
+        }
 
         if (ModeSettingsMemory.usesRectangularComplexFormat()) {
             val complexEvaluation = runCatching {
@@ -336,6 +358,17 @@ object CalculatorDisplayMemory {
         } else {
             EvaluationResult(SYNTAX_ERROR)
         }
+    }
+
+    private fun preferredFractionDisplay(expression: String): String? {
+        if ('.' in expression ||
+            (FRACTION_FUNCTION !in expression && MIXED_FRACTION_FUNCTION !in expression)
+        ) {
+            return null
+        }
+        return runCatching {
+            ExactFractionParser(expression, latestAnswer(), realVariableValues()).parse().display()
+        }.getOrNull()
     }
 
     private fun evaluateAssignment(expression: String): EvaluationResult = try {
@@ -542,7 +575,7 @@ object CalculatorDisplayMemory {
 
     private fun endsOperandBeforeCursor(): Boolean =
         cursor > 0 && currentEntry[cursor - 1].let {
-            it.isDigit() || it == ')' || isVariableSymbol(it) || it == COMPLEX_UNIT ||
+            it.isDigit() || it == ')' || it == '!' || isVariableSymbol(it) || it == COMPLEX_UNIT ||
                 it == PI_TOKEN || it == EULER_TOKEN ||
                 currentEntry.substring(0, cursor).endsWith(ANSWER_TOKEN)
         }
@@ -551,7 +584,7 @@ object CalculatorDisplayMemory {
 
     private fun endsOperand(expression: String): Boolean =
         expression.lastOrNull()?.let {
-            it.isDigit() || it == ')' || isVariableSymbol(it) || it == COMPLEX_UNIT ||
+            it.isDigit() || it == ')' || it == '!' || isVariableSymbol(it) || it == COMPLEX_UNIT ||
                 it == PI_TOKEN || it == EULER_TOKEN || expression.endsWith(ANSWER_TOKEN)
         } == true
 
@@ -597,7 +630,8 @@ object CalculatorDisplayMemory {
 
     private fun endsOperandAt(endExclusive: Int): Boolean {
         val previous = currentEntry.getOrNull(endExclusive - 1) ?: return false
-        return previous.isDigit() || previous == '.' || previous == ')' || isVariableSymbol(previous) ||
+        return previous.isDigit() || previous == '.' || previous == ')' || previous == '!' ||
+            isVariableSymbol(previous) ||
             previous == COMPLEX_UNIT || previous == PI_TOKEN || previous == EULER_TOKEN ||
             currentEntry.substring(0, endExclusive).endsWith(ANSWER_TOKEN)
     }
@@ -623,13 +657,15 @@ object CalculatorDisplayMemory {
     }
 
     private fun entryTokenStartingAt(position: Int): String? =
-        ENTRY_TOKENS.firstOrNull { currentEntry.startsWith(it, position) }
+        ExpressionEditingTokens.structuredFractionStartingAt(currentEntry, position)
+            ?: ENTRY_TOKENS.firstOrNull { currentEntry.startsWith(it, position) }
 
     private fun entryTokenEndingAt(position: Int): String? =
-        ENTRY_TOKENS.firstOrNull { token ->
-            position >= token.length &&
-                currentEntry.regionMatches(position - token.length, token, 0, token.length)
-        }
+        ExpressionEditingTokens.structuredFractionEndingAt(currentEntry, position)
+            ?: ENTRY_TOKENS.firstOrNull { token ->
+                position >= token.length &&
+                    currentEntry.regionMatches(position - token.length, token, 0, token.length)
+            }
 
     private fun load() {
         CalculatorPersistence.load(memoryFile) { savedLines ->
@@ -692,15 +728,50 @@ object CalculatorDisplayMemory {
     private const val INVERSE_COSINE = "cos⁻¹"
     private const val INVERSE_TANGENT = "tan⁻¹"
     private const val SQUARE_ROOT = "sqrt"
+    private const val RECTANGULAR_TO_RADIUS = "R►Pr"
+    private const val RECTANGULAR_TO_ANGLE = "R►Pθ"
+    private const val POLAR_TO_X = "P►Rx"
+    private const val POLAR_TO_Y = "P►Ry"
+    private const val FRACTION_FUNCTION = "frac"
+    private const val MIXED_FRACTION_FUNCTION = "mixed"
+    private const val LOG_BASE_FUNCTION = "logBASE"
+    private const val NTH_ROOT_FUNCTION = "nthRoot"
+    private const val PERMUTATION_FUNCTION = "nPr"
+    private const val COMBINATION_FUNCTION = "nCr"
+    private const val DEGREE_MARKER = '°'
+    private const val RADIAN_MARKER = 'ʳ'
     private const val COMPLEX_ZERO_EPSILON = 1.0e-12
     private const val MAX_POWER_RESULT_CHARACTERS = 4_096L
     private const val MAX_SCIENTIFIC_EXPONENT = 4_000
     private const val MAX_HISTORY_ENTRIES = 1_000
+    private const val DEFAULT_ROUND_SIGNIFICANT_DIGITS = 10
+    private val FRACTION_RESULT_PATTERN = Regex("-?\\d+/-?\\d+")
     private val FUNCTIONS = listOf(
         INVERSE_SINE,
         INVERSE_COSINE,
         INVERSE_TANGENT,
+        RECTANGULAR_TO_RADIUS,
+        RECTANGULAR_TO_ANGLE,
+        POLAR_TO_X,
+        POLAR_TO_Y,
+        MIXED_FRACTION_FUNCTION,
+        LOG_BASE_FUNCTION,
+        NTH_ROOT_FUNCTION,
+        "remainder",
+        FRACTION_FUNCTION,
         SQUARE_ROOT,
+        PERMUTATION_FUNCTION,
+        COMBINATION_FUNCTION,
+        "iPart",
+        "fPart",
+        "round",
+        "abs",
+        "min",
+        "max",
+        "lcm",
+        "gcd",
+        "int",
+        "not",
         "sin",
         "cos",
         "tan",
@@ -708,17 +779,23 @@ object CalculatorDisplayMemory {
         "ln"
     )
     private val TRIG_FUNCTIONS = setOf("sin", "cos", "tan")
+    private val RELATIONAL_OPERATORS = listOf("≠", "≥", "≤", "=", ">", "<")
+    private val BOOLEAN_OPERATOR_TOKENS = listOf("and", "xor", "or")
     private val AUTO_CLOSING_PREFIXES = FUNCTIONS + listOf("10^", "$EULER_TOKEN^")
     private val ENTRY_TOKENS =
-        (FUNCTIONS.map { "$it(" } + listOf("10^(", "$EULER_TOKEN^(", ANSWER_TOKEN, SCIENTIFIC_EXPONENT_TOKEN))
+        (
+            FUNCTIONS.map { "$it(" } + BOOLEAN_OPERATOR_TOKENS +
+                listOf("10^(", "$EULER_TOKEN^(", ANSWER_TOKEN, SCIENTIFIC_EXPONENT_TOKEN)
+            )
             .sortedByDescending(String::length)
     private val QUARTER_TURN_DEGREES = BigDecimal("90")
     private val FOUR = BigDecimal("4")
+    private val MAX_GCD_LCM_ARGUMENT = BigDecimal("1000000000000").toBigInteger()
     private val CALCULATION_CONTEXT = MathContext(34, RoundingMode.HALF_UP)
 
     private class CalculatorEvaluationException(message: String) : IllegalArgumentException(message)
 
-    /** Recursive-descent evaluator with standard arithmetic precedence and parenthesis support. */
+    /** Recursive-descent evaluator with calculator arithmetic, relation, and Boolean precedence. */
     private class ExpressionParser(
         private val expression: String,
         private val previousAnswer: BigDecimal?,
@@ -727,9 +804,58 @@ object CalculatorDisplayMemory {
         private var index = 0
 
         fun parse(): BigDecimal {
-            val result = parseSum()
+            val result = parseLogic()
             check(index == expression.length) { "Unexpected expression content" }
             return result
+        }
+
+        private fun parseLogic(): BigDecimal {
+            var result = parseAnd()
+            while (true) {
+                val operator = when {
+                    expression.startsWith("or", index) -> "or"
+                    expression.startsWith("xor", index) -> "xor"
+                    else -> return result
+                }
+                index += operator.length
+                val right = parseAnd()
+                result = booleanResult(
+                    if (operator == "or") isTrue(result) || isTrue(right)
+                    else isTrue(result) xor isTrue(right)
+                )
+            }
+        }
+
+        private fun parseAnd(): BigDecimal {
+            var result = parseRelation()
+            while (expression.startsWith("and", index)) {
+                index += 3
+                val right = parseRelation()
+                result = booleanResult(isTrue(result) && isTrue(right))
+            }
+            return result
+        }
+
+        private fun parseRelation(): BigDecimal {
+            var result = parseSum()
+            while (true) {
+                val operator = RELATIONAL_OPERATORS.firstOrNull {
+                    expression.startsWith(it, index)
+                } ?: return result
+                index += operator.length
+                val comparison = result.compareTo(parseSum())
+                result = booleanResult(
+                    when (operator) {
+                        "=" -> comparison == 0
+                        "≠" -> comparison != 0
+                        ">" -> comparison > 0
+                        "≥" -> comparison >= 0
+                        "<" -> comparison < 0
+                        "≤" -> comparison <= 0
+                        else -> error("Unsupported relation: $operator")
+                    }
+                )
+            }
         }
 
         private fun parseSum(): BigDecimal {
@@ -779,7 +905,7 @@ object CalculatorDisplayMemory {
                 )
 
         private fun parsePower(): BigDecimal {
-            val result = parsePrimary()
+            val result = parsePostfix()
             return if (index < expression.length && expression[index] == '^') {
                 index++
                 val exponent = parseUnary()
@@ -796,6 +922,34 @@ object CalculatorDisplayMemory {
             } else {
                 result
             }
+        }
+
+        private fun parsePostfix(): BigDecimal {
+            var result = parsePrimary()
+            while (index < expression.length &&
+                expression[index] in charArrayOf(DEGREE_MARKER, RADIAN_MARKER, '!')
+            ) {
+                result = when (expression[index++]) {
+                    DEGREE_MARKER ->
+                        if (ModeSettingsMemory.usesDegrees()) result
+                        else result.multiply(
+                            BigDecimal.valueOf(Math.PI / 180.0),
+                            CALCULATION_CONTEXT
+                        )
+                    RADIAN_MARKER ->
+                        if (ModeSettingsMemory.usesDegrees()) {
+                            result.multiply(
+                                BigDecimal.valueOf(180.0 / Math.PI),
+                                CALCULATION_CONTEXT
+                            )
+                        } else {
+                            result
+                        }
+                    '!' -> factorial(result)
+                    else -> error("Unsupported angle marker")
+                }
+            }
+            return result
         }
 
         private fun parseUnary(): BigDecimal =
@@ -844,7 +998,9 @@ object CalculatorDisplayMemory {
                 return checkNotNull(previousAnswer) { "No previous answer is available" }
             }
 
-            if (index < expression.length) {
+            if (index < expression.length &&
+                FUNCTIONS.none { expression.startsWith(it, index) }
+            ) {
                 CalculatorVariable.fromSymbol(expression[index])?.let { variable ->
                     index++
                     return checkNotNull(variableValues[variable]) {
@@ -869,17 +1025,17 @@ object CalculatorDisplayMemory {
                     "Expected opening parenthesis after $function"
                 }
                 index++
-                val argument = parseSum()
+                val arguments = parseFunctionArguments()
                 check(index < expression.length && expression[index] == ')') {
                     "Missing closing parenthesis"
                 }
                 index++
-                return evaluateFunction(function, argument)
+                return evaluateFunction(function, arguments)
             }
 
             if (index < expression.length && expression[index] == '(') {
                 index++
-                val result = parseSum()
+                val result = parseLogic()
                 check(index < expression.length && expression[index] == ')') { "Missing closing parenthesis" }
                 index++
                 return result
@@ -916,7 +1072,167 @@ object CalculatorDisplayMemory {
             return mantissa.scaleByPowerOfTen(exponent)
         }
 
-        private fun evaluateFunction(function: String, argument: BigDecimal): BigDecimal {
+        private fun parseFunctionArguments(): List<BigDecimal> {
+            check(index < expression.length && expression[index] != ')') {
+                "A function argument is required"
+            }
+            val arguments = mutableListOf<BigDecimal>()
+            do {
+                arguments += parseLogic()
+                if (index >= expression.length || expression[index] != ',') break
+                index++
+                check(index < expression.length && expression[index] != ')') {
+                    "A function argument is required after comma"
+                }
+            } while (true)
+            return arguments
+        }
+
+        private fun evaluateFunction(function: String, arguments: List<BigDecimal>): BigDecimal {
+            if (function == FRACTION_FUNCTION) {
+                check(arguments.size == 2) { "frac requires two arguments" }
+                val denominator = arguments[1]
+                if (denominator.compareTo(BigDecimal.ZERO) == 0) {
+                    throw CalculatorEvaluationException(DIVISION_BY_ZERO_ERROR)
+                }
+                return arguments[0].divide(denominator, CALCULATION_CONTEXT)
+            }
+            if (function == MIXED_FRACTION_FUNCTION) {
+                check(arguments.size == 3) { "mixed requires three arguments" }
+                val denominator = arguments[2]
+                if (denominator.compareTo(BigDecimal.ZERO) == 0) {
+                    throw CalculatorEvaluationException(DIVISION_BY_ZERO_ERROR)
+                }
+                val fractionalPart = arguments[1].abs().divide(denominator.abs(), CALCULATION_CONTEXT)
+                return if (arguments[0].signum() < 0) {
+                    arguments[0].subtract(fractionalPart, CALCULATION_CONTEXT)
+                } else {
+                    arguments[0].add(fractionalPart, CALCULATION_CONTEXT)
+                }
+            }
+            if (function in COORDINATE_FUNCTIONS) {
+                check(arguments.size == 2) { "$function requires two arguments" }
+                val first = arguments[0].toDouble()
+                val second = arguments[1].toDouble()
+                val usesDegrees = ModeSettingsMemory.usesDegrees()
+                val result = when (function) {
+                    RECTANGULAR_TO_RADIUS -> Math.hypot(first, second)
+                    RECTANGULAR_TO_ANGLE ->
+                        inverseAngle(Math.atan2(second, first), usesDegrees)
+                    POLAR_TO_X -> first * Math.cos(if (usesDegrees) Math.toRadians(second) else second)
+                    POLAR_TO_Y -> first * Math.sin(if (usesDegrees) Math.toRadians(second) else second)
+                    else -> error("Unsupported coordinate function: $function")
+                }
+                check(result.isFinite()) { "Function result is outside the supported range" }
+                return BigDecimal.valueOf(normalizeCoordinateResult(result))
+            }
+            if (function == "not") {
+                check(arguments.size == 1) { "not requires one argument" }
+                return booleanResult(!isTrue(arguments.single()))
+            }
+            if (function == "abs") {
+                check(arguments.size == 1) { "abs requires one argument" }
+                return arguments.single().abs()
+            }
+            if (function == "round") {
+                check(arguments.size in 1..2) { "round requires one or two arguments" }
+                val scale = arguments.getOrNull(1)?.let(::decimalPlaceCount)
+                return if (scale == null) {
+                    arguments.first().round(
+                        MathContext(DEFAULT_ROUND_SIGNIFICANT_DIGITS, RoundingMode.HALF_UP)
+                    )
+                } else {
+                    arguments.first().setScale(scale, RoundingMode.HALF_UP)
+                }
+            }
+            if (function == "iPart") {
+                check(arguments.size == 1) { "iPart requires one argument" }
+                return arguments.single().setScale(0, RoundingMode.DOWN)
+            }
+            if (function == "fPart") {
+                check(arguments.size == 1) { "fPart requires one argument" }
+                val value = arguments.single()
+                return value.subtract(value.setScale(0, RoundingMode.DOWN), CALCULATION_CONTEXT)
+            }
+            if (function == "int") {
+                check(arguments.size == 1) { "int requires one argument" }
+                return arguments.single().setScale(0, RoundingMode.FLOOR)
+            }
+            if (function == "min" || function == "max") {
+                check(arguments.size == 2) { "$function requires two arguments" }
+                return if ((function == "min" && arguments[1] < arguments[0]) ||
+                    (function == "max" && arguments[1] > arguments[0])
+                ) arguments[1] else arguments[0]
+            }
+            if (function == "gcd" || function == "lcm") {
+                check(arguments.size == 2) { "$function requires two arguments" }
+                val left = nonnegativeGcdLcmArgument(arguments[0])
+                val right = nonnegativeGcdLcmArgument(arguments[1])
+                val gcd = left.gcd(right)
+                return BigDecimal(
+                    if (function == "gcd") gcd
+                    else if (left.signum() == 0 || right.signum() == 0) java.math.BigInteger.ZERO
+                    else left.divide(gcd).multiply(right)
+                )
+            }
+            if (function == "remainder") {
+                check(arguments.size == 2) { "remainder requires two arguments" }
+                val dividend = arguments[0].toBigIntegerExact()
+                val divisor = arguments[1].toBigIntegerExact()
+                check(dividend.signum() >= 0) { "remainder requires a nonnegative dividend" }
+                if (divisor.signum() == 0) {
+                    throw CalculatorEvaluationException(DIVISION_BY_ZERO_ERROR)
+                }
+                check(divisor.signum() > 0) { "remainder requires a positive divisor" }
+                return BigDecimal(dividend.remainder(divisor))
+            }
+            if (function == LOG_BASE_FUNCTION) {
+                check(arguments.size == 2) { "logBASE requires two arguments" }
+                val value = arguments[0].toDouble()
+                val base = arguments[1].toDouble()
+                check(value > 0.0 && base > 0.0 && base != 1.0) {
+                    "logBASE requires a positive value and positive base other than 1"
+                }
+                val result = Math.log(value) / Math.log(base)
+                check(result.isFinite()) { "Function result is outside the supported range" }
+                return BigDecimal.valueOf(result)
+            }
+            if (function == NTH_ROOT_FUNCTION) {
+                check(arguments.size == 2) { "nthRoot requires value and index" }
+                val value = arguments[0].toDouble()
+                val root = arguments[1].toDouble()
+                check(root != 0.0) { "nthRoot index cannot be zero" }
+                val result = if (value < 0.0) {
+                    val integerRoot = arguments[1].intValueExact()
+                    check(integerRoot % 2 != 0) { "Even root of a negative value is not real" }
+                    -Math.pow(-value, 1.0 / integerRoot)
+                } else {
+                    Math.pow(value, 1.0 / root)
+                }
+                check(result.isFinite()) { "Function result is outside the supported range" }
+                return BigDecimal.valueOf(normalizeCoordinateResult(result))
+            }
+            if (function == PERMUTATION_FUNCTION || function == COMBINATION_FUNCTION) {
+                check(arguments.size == 2) { "$function requires two arguments" }
+                val n = combinatoricArgument(arguments[0])
+                val r = combinatoricArgument(arguments[1])
+                check(r <= n) { "$function requires r no larger than n" }
+                val result = if (function == PERMUTATION_FUNCTION) {
+                    ((n - r + 1)..n).fold(BigInteger.ONE) { product, factor ->
+                        product.multiply(BigInteger.valueOf(factor.toLong()))
+                    }
+                } else {
+                    val smallerR = minOf(r, n - r)
+                    (1..smallerR).fold(BigInteger.ONE) { result, step ->
+                        result.multiply(BigInteger.valueOf((n - smallerR + step).toLong()))
+                            .divide(BigInteger.valueOf(step.toLong()))
+                    }
+                }
+                return BigDecimal(result)
+            }
+
+            check(arguments.size == 1) { "$function requires one argument" }
+            val argument = arguments.single()
             val value = argument.toDouble()
             val usesDegrees = ModeSettingsMemory.usesDegrees()
             val angle = if (usesDegrees) Math.toRadians(value) else value
@@ -936,6 +1252,54 @@ object CalculatorDisplayMemory {
             check(normalizedResult.isFinite()) { "Function result is outside the supported range" }
             return BigDecimal.valueOf(normalizedResult)
         }
+
+        private fun decimalPlaceCount(value: BigDecimal): Int {
+            val count = value.intValueExact()
+            check(count in 0..9) { "Decimal-place count must be from 0 through 9" }
+            return count
+        }
+
+        private fun normalizeCoordinateResult(value: Double): Double {
+            val nearestInteger = Math.rint(value)
+            return when {
+                kotlin.math.abs(value) < ANGLE_IDENTITY_EPSILON -> 0.0
+                kotlin.math.abs(value - nearestInteger) < ANGLE_IDENTITY_EPSILON -> nearestInteger
+                else -> value
+            }
+        }
+
+        private fun nonnegativeGcdLcmArgument(value: BigDecimal): java.math.BigInteger {
+            val integer = value.toBigIntegerExact()
+            check(integer.signum() >= 0 && integer <= MAX_GCD_LCM_ARGUMENT) {
+                "gcd and lcm arguments must be nonnegative integers no larger than 1E12"
+            }
+            return integer
+        }
+
+        private fun combinatoricArgument(value: BigDecimal): Int {
+            val integer = value.intValueExact()
+            check(integer in 0..MAX_COMBINATORIC_ARGUMENT) {
+                "Combinatoric arguments must be integers from 0 through $MAX_COMBINATORIC_ARGUMENT"
+            }
+            return integer
+        }
+
+        private fun factorial(value: BigDecimal): BigDecimal {
+            val integer = value.intValueExact()
+            check(integer in 0..MAX_FACTORIAL_ARGUMENT) {
+                "Factorial requires an integer from 0 through $MAX_FACTORIAL_ARGUMENT"
+            }
+            return BigDecimal(
+                (2..integer).fold(BigInteger.ONE) { result, factor ->
+                    result.multiply(BigInteger.valueOf(factor.toLong()))
+                }
+            )
+        }
+
+        private fun isTrue(value: BigDecimal): Boolean = value.compareTo(BigDecimal.ZERO) != 0
+
+        private fun booleanResult(value: Boolean): BigDecimal =
+            if (value) BigDecimal.ONE else BigDecimal.ZERO
 
         private fun inverseAngle(radians: Double, usesDegrees: Boolean): Double =
             if (usesDegrees) Math.toDegrees(radians) else radians
@@ -967,4 +1331,231 @@ object CalculatorDisplayMemory {
             }
         }
     }
+
+    private class ExactFraction private constructor(
+        val numerator: BigInteger,
+        val denominator: BigInteger
+    ) {
+        fun add(other: ExactFraction): ExactFraction =
+            of(
+                numerator.multiply(other.denominator).add(other.numerator.multiply(denominator)),
+                denominator.multiply(other.denominator)
+            )
+
+        fun subtract(other: ExactFraction): ExactFraction =
+            add(of(other.numerator.negate(), other.denominator))
+
+        fun multiply(other: ExactFraction): ExactFraction =
+            of(numerator.multiply(other.numerator), denominator.multiply(other.denominator))
+
+        fun divide(other: ExactFraction): ExactFraction {
+            check(other.numerator.signum() != 0) { "Division by zero" }
+            return of(numerator.multiply(other.denominator), denominator.multiply(other.numerator))
+        }
+
+        fun negate(): ExactFraction = of(numerator.negate(), denominator)
+
+        fun abs(): ExactFraction = of(numerator.abs(), denominator)
+
+        fun pow(exponent: Int): ExactFraction = when {
+            exponent == 0 -> ONE
+            exponent > 0 -> of(numerator.pow(exponent), denominator.pow(exponent))
+            else -> {
+                check(numerator.signum() != 0) { "Division by zero" }
+                of(denominator.pow(-exponent), numerator.pow(-exponent))
+            }
+        }
+
+        fun display(): String =
+            if (denominator == BigInteger.ONE) numerator.toString()
+            else "$numerator/$denominator"
+
+        companion object {
+            val ONE = of(BigInteger.ONE, BigInteger.ONE)
+
+            fun of(numerator: BigInteger, denominator: BigInteger): ExactFraction {
+                check(denominator.signum() != 0) { "Division by zero" }
+                val sign = if (denominator.signum() < 0) BigInteger.ONE.negate() else BigInteger.ONE
+                val signedNumerator = numerator.multiply(sign)
+                val positiveDenominator = denominator.multiply(sign)
+                val gcd = signedNumerator.gcd(positiveDenominator)
+                return ExactFraction(
+                    signedNumerator.divide(gcd),
+                    positiveDenominator.divide(gcd)
+                )
+            }
+
+            fun fromDecimal(value: BigDecimal): ExactFraction {
+                val stripped = value.stripTrailingZeros()
+                return if (stripped.scale() >= 0) {
+                    of(stripped.unscaledValue(), BigInteger.TEN.pow(stripped.scale()))
+                } else {
+                    of(
+                        stripped.unscaledValue().multiply(BigInteger.TEN.pow(-stripped.scale())),
+                        BigInteger.ONE
+                    )
+                }
+            }
+        }
+    }
+
+    /** Exact rational subset used only when a completed expression contains a FRAC template. */
+    private class ExactFractionParser(
+        private val expression: String,
+        private val previousAnswer: BigDecimal?,
+        private val variableValues: Map<CalculatorVariable, BigDecimal?>
+    ) {
+        private var index = 0
+
+        fun parse(): ExactFraction {
+            val result = parseSum()
+            check(index == expression.length) { "Unsupported exact-fraction expression" }
+            return result
+        }
+
+        private fun parseSum(): ExactFraction {
+            var result = parseProduct()
+            while (index < expression.length && expression[index] in "+-") {
+                result = if (expression[index++] == '+') {
+                    result.add(parseProduct())
+                } else {
+                    result.subtract(parseProduct())
+                }
+            }
+            return result
+        }
+
+        private fun parseProduct(): ExactFraction {
+            var result = parseUnary()
+            while (index < expression.length) {
+                result = when {
+                    expression[index] == '*' -> {
+                        index++
+                        result.multiply(parseUnary())
+                    }
+                    expression[index] == '/' -> {
+                        index++
+                        result.divide(parseUnary())
+                    }
+                    startsPrimaryAt(index) -> result.multiply(parseUnary())
+                    else -> return result
+                }
+            }
+            return result
+        }
+
+        private fun parseUnary(): ExactFraction =
+            if (index < expression.length && expression[index] == '-') {
+                index++
+                parseUnary().negate()
+            } else {
+                parsePower()
+            }
+
+        private fun parsePower(): ExactFraction {
+            val base = parsePrimary()
+            if (index >= expression.length || expression[index] != '^') return base
+            index++
+            val exponent = parseUnary()
+            check(exponent.denominator == BigInteger.ONE) { "Fractional powers are not exact" }
+            val integerExponent = exponent.numerator.intValueExact()
+            check(integerExponent in -1_000..1_000) { "Exact exponent is too large" }
+            return base.pow(integerExponent)
+        }
+
+        private fun parsePrimary(): ExactFraction {
+            if (expression.startsWith(ANSWER_TOKEN, index)) {
+                index += ANSWER_TOKEN.length
+                return ExactFraction.fromDecimal(
+                    checkNotNull(previousAnswer) { "No previous answer is available" }
+                )
+            }
+
+            if (expression.startsWith(FRACTION_FUNCTION, index) ||
+                expression.startsWith(MIXED_FRACTION_FUNCTION, index)
+            ) {
+                val function = if (expression.startsWith(MIXED_FRACTION_FUNCTION, index)) {
+                    MIXED_FRACTION_FUNCTION
+                } else {
+                    FRACTION_FUNCTION
+                }
+                index += function.length
+                check(index < expression.length && expression[index++] == '(')
+                val arguments = parseArguments()
+                check(index < expression.length && expression[index++] == ')')
+                return when (function) {
+                    FRACTION_FUNCTION -> {
+                        check(arguments.size == 2)
+                        arguments[0].divide(arguments[1])
+                    }
+                    MIXED_FRACTION_FUNCTION -> {
+                        check(arguments.size == 3)
+                        val part = arguments[1].abs().divide(arguments[2].abs())
+                        if (arguments[0].numerator.signum() < 0) {
+                            arguments[0].subtract(part)
+                        } else {
+                            arguments[0].add(part)
+                        }
+                    }
+                    else -> error("Unsupported exact function")
+                }
+            }
+
+            if (index < expression.length) {
+                CalculatorVariable.fromSymbol(expression[index])?.let { variable ->
+                    index++
+                    return ExactFraction.fromDecimal(
+                        checkNotNull(variableValues[variable]) {
+                            "Complex variables are not exact real fractions"
+                        }
+                    )
+                }
+            }
+
+            if (index < expression.length && expression[index] == '(') {
+                index++
+                val result = parseSum()
+                check(index < expression.length && expression[index++] == ')')
+                return result
+            }
+
+            val start = index
+            while (index < expression.length && expression[index].isDigit()) index++
+            check(start != index) { "Expected an exact integer" }
+            return ExactFraction.of(
+                BigInteger(expression.substring(start, index)),
+                BigInteger.ONE
+            )
+        }
+
+        private fun parseArguments(): List<ExactFraction> {
+            val arguments = mutableListOf<ExactFraction>()
+            do {
+                arguments += parseSum()
+                if (index >= expression.length || expression[index] != ',') break
+                index++
+            } while (true)
+            return arguments
+        }
+
+        private fun startsPrimaryAt(position: Int): Boolean =
+            position < expression.length && (
+                expression[position].isDigit() ||
+                    expression[position] == '(' ||
+                    CalculatorVariable.fromSymbol(expression[position]) != null ||
+                    expression.startsWith(ANSWER_TOKEN, position) ||
+                    expression.startsWith(FRACTION_FUNCTION, position) ||
+                    expression.startsWith(MIXED_FRACTION_FUNCTION, position)
+                )
+    }
+
+    private val COORDINATE_FUNCTIONS = setOf(
+        RECTANGULAR_TO_RADIUS,
+        RECTANGULAR_TO_ANGLE,
+        POLAR_TO_X,
+        POLAR_TO_Y
+    )
+    private const val ANGLE_IDENTITY_EPSILON = 1.0e-12
+    private const val MAX_COMBINATORIC_ARGUMENT = 10_000
+    private const val MAX_FACTORIAL_ARGUMENT = 1_000
 }

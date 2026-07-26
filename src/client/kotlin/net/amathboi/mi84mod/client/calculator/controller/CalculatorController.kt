@@ -6,6 +6,7 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import net.amathboi.mi84mod.client.calculator.CalculatorDisplayMemory
+import net.amathboi.mi84mod.client.calculator.ExpressionEditingTokens
 import net.amathboi.mi84mod.client.calculator.GraphNavigationMath
 import net.amathboi.mi84mod.client.calculator.ModeSettingsMemory
 import net.amathboi.mi84mod.client.calculator.WindowSettingsMemory
@@ -18,6 +19,13 @@ import net.amathboi.mi84mod.client.calculator.input.CalculatorKeyBindings
 import net.amathboi.mi84mod.client.calculator.input.ModifierLayer
 import net.amathboi.mi84mod.client.calculator.ui.CalculatorUiState
 import net.amathboi.mi84mod.client.calculator.ui.CalculatorView
+import net.amathboi.mi84mod.client.calculator.ui.CompactMenuDefinitions
+import net.amathboi.mi84mod.client.calculator.ui.CompactMenuId
+import net.amathboi.mi84mod.client.calculator.ui.CompactMenuState
+import net.amathboi.mi84mod.client.calculator.ui.FractionTemplateState
+import net.amathboi.mi84mod.client.calculator.ui.FunctionMenuAction
+import net.amathboi.mi84mod.client.calculator.ui.FunctionMenuState
+import net.amathboi.mi84mod.client.calculator.ui.FunctionMenuTab
 import net.amathboi.mi84mod.client.calculator.ui.GraphWindow
 import net.amathboi.mi84mod.client.calculator.ui.TraceState
 import net.amathboi.mi84mod.client.calculator.ui.ZoomGraphOperation
@@ -63,34 +71,35 @@ class CalculatorController(
         graphAspect: Double = DEFAULT_GRAPH_ASPECT
     ): DispatchResult {
         if (event.key == CalculatorKey.SECOND) {
-            state.modifier = if (state.modifier == ModifierLayer.SECOND) {
-                ModifierLayer.NORMAL
-            } else {
-                ModifierLayer.SECOND
-            }
+            toggleSecondModifier()
             return DispatchResult.Handled
         }
         if (event.key == CalculatorKey.ALPHA) {
-            state.modifier = if (state.modifier == ModifierLayer.ALPHA) {
-                ModifierLayer.NORMAL
-            } else {
-                ModifierLayer.ALPHA
-            }
+            handleAlphaModifier()
             return DispatchResult.Handled
         }
 
-        if (state.view == CalculatorView.ZOOM && state.modifier == ModifierLayer.ALPHA) {
+        if (state.view == CalculatorView.COMPACT_MENU &&
+            handleCompactMenuPhysicalKey(event.key)
+        ) {
+            return DispatchResult.Handled
+        }
+        if (state.functionMenu != null && handleFunctionMenuPhysicalKey(event.key)) {
+            return DispatchResult.Handled
+        }
+
+        val activeLayer = effectiveModifierLayer()
+        if (state.view == CalculatorView.ZOOM && activeLayer == ModifierLayer.ALPHA) {
             val alphaHotkey = alphaHotkeyFor(event.key)
             if (alphaHotkey != null) {
-                state.modifier = ModifierLayer.NORMAL
+                consumeTransientModifier()
                 activateZoomHotkey(alphaHotkey, graphAspect)
                 return DispatchResult.Handled
             }
         }
 
-        val activeLayer = state.modifier
         val command = CalculatorKeyBindings.resolve(event.key, activeLayer)
-        if (activeLayer != ModifierLayer.NORMAL) state.modifier = ModifierLayer.NORMAL
+        if (activeLayer != ModifierLayer.NORMAL) consumeTransientModifier()
         when (command) {
             is CalculatorCommand.Placeholder ->
                 return DispatchResult.Placeholder(command.key, command.layer)
@@ -103,8 +112,20 @@ class CalculatorController(
                 switchView(command.view)
                 return DispatchResult.Handled
             }
+            is CalculatorCommand.OpenCompactMenu -> {
+                openCompactMenu(command.menu)
+                return DispatchResult.Handled
+            }
+            is CalculatorCommand.OpenFunctionMenu -> {
+                openFunctionMenu(command.tab)
+                return DispatchResult.Handled
+            }
             CalculatorCommand.QuitToHome -> {
-                switchView(CalculatorView.HOME)
+                if (state.functionMenu != null) {
+                    closeFunctionMenu()
+                } else {
+                    switchView(CalculatorView.HOME)
+                }
                 return DispatchResult.Handled
             }
             CalculatorCommand.BeginTrace -> {
@@ -118,6 +139,18 @@ class CalculatorController(
             else -> Unit
         }
 
+        state.functionMenu?.let {
+            handleFunctionMenu(command)
+            return DispatchResult.Handled
+        }
+        state.fractionTemplate?.let {
+            handleFractionTemplate(command, it)
+            return DispatchResult.Handled
+        }
+        if (command == CalculatorCommand.Left && reopenStructuredFractionBeforeCursor()) {
+            return DispatchResult.Handled
+        }
+
         when (state.view) {
             CalculatorView.HOME -> HomeViewController.handle(command, state)
             CalculatorView.Y_EQUALS -> YEqualsViewController.handle(command, state)
@@ -125,6 +158,7 @@ class CalculatorController(
             CalculatorView.MODE -> ModeViewController.handle(command)
             CalculatorView.ZOOM -> handleZoom(command, graphAspect)
             CalculatorView.ZOOM_FACTORS -> handleZoomFactors(command)
+            CalculatorView.COMPACT_MENU -> handleCompactMenu(command)
             CalculatorView.GRAPH -> handleGraph(command, graphAspect)
         }
         return DispatchResult.Handled
@@ -195,6 +229,95 @@ class CalculatorController(
         }
     }
 
+    private fun handleCompactMenu(command: CalculatorCommand) {
+        val menu = state.compactMenu ?: run {
+            switchView(CalculatorView.HOME)
+            return
+        }
+        when (command) {
+            CalculatorCommand.Left -> menu.selectPreviousTab()
+            CalculatorCommand.Right -> menu.selectNextTab()
+            CalculatorCommand.Up -> menu.selectPreviousItem()
+            CalculatorCommand.Down -> menu.selectNextItem()
+            CalculatorCommand.Enter -> activateCompactMenuItem(menu)
+            CalculatorCommand.Clear -> closeCompactMenu(menu)
+            is CalculatorCommand.Digit -> {
+                if (menu.selectHotkey(command.value.toString())) {
+                    activateCompactMenuItem(menu)
+                }
+            }
+            else -> Unit
+        }
+    }
+
+    private fun handleFunctionMenu(command: CalculatorCommand) {
+        val menu = state.functionMenu ?: return
+        when (command) {
+            CalculatorCommand.Left -> menu.selectPreviousTab()
+            CalculatorCommand.Right -> menu.selectNextTab()
+            CalculatorCommand.Up -> menu.selectPreviousItem()
+            CalculatorCommand.Down -> menu.selectNextItem()
+            CalculatorCommand.Enter -> activateFunctionMenuItem(menu)
+            CalculatorCommand.Clear -> closeFunctionMenu()
+            is CalculatorCommand.Digit -> {
+                if (menu.selectHotkey(command.value.toString())) {
+                    activateFunctionMenuItem(menu)
+                }
+            }
+            else -> Unit
+        }
+    }
+
+    /**
+     * Compact-menu navigation and displayed hotkeys remain physical controls while A-LOCK is
+     * active. An explicit one-shot modifier still takes precedence and cannot fall through.
+     */
+    private fun handleCompactMenuPhysicalKey(key: CalculatorKey): Boolean {
+        if (state.modifier != ModifierLayer.NORMAL) return false
+        val menu = state.compactMenu ?: return false
+        when (key) {
+            CalculatorKey.LEFT -> menu.selectPreviousTab()
+            CalculatorKey.RIGHT -> menu.selectNextTab()
+            CalculatorKey.UP -> menu.selectPreviousItem()
+            CalculatorKey.DOWN -> menu.selectNextItem()
+            CalculatorKey.ENTER -> activateCompactMenuItem(menu)
+            CalculatorKey.CLEAR -> closeCompactMenu(menu)
+            CalculatorKey.Y_EQUALS -> switchView(CalculatorView.Y_EQUALS)
+            CalculatorKey.WINDOW -> switchView(CalculatorView.WINDOW)
+            CalculatorKey.ZOOM -> switchView(CalculatorView.ZOOM)
+            CalculatorKey.TRACE -> beginTrace()
+            CalculatorKey.GRAPH -> switchView(CalculatorView.GRAPH)
+            CalculatorKey.MODE -> switchView(CalculatorView.MODE)
+            else -> {
+                val hotkey = digitHotkeyFor(key) ?: return false
+                if (menu.selectHotkey(hotkey)) activateCompactMenuItem(menu)
+            }
+        }
+        return true
+    }
+
+    /**
+     * Function-menu navigation remains physical while A-LOCK is active, matching compact menus.
+     * Other keys continue through typed command routing so direct view changes can close the overlay.
+     */
+    private fun handleFunctionMenuPhysicalKey(key: CalculatorKey): Boolean {
+        if (state.modifier != ModifierLayer.NORMAL) return false
+        val menu = state.functionMenu ?: return false
+        when (key) {
+            CalculatorKey.LEFT -> menu.selectPreviousTab()
+            CalculatorKey.RIGHT -> menu.selectNextTab()
+            CalculatorKey.UP -> menu.selectPreviousItem()
+            CalculatorKey.DOWN -> menu.selectNextItem()
+            CalculatorKey.ENTER -> activateFunctionMenuItem(menu)
+            CalculatorKey.CLEAR -> closeFunctionMenu()
+            else -> {
+                val hotkey = digitHotkeyFor(key) ?: return false
+                if (menu.selectHotkey(hotkey)) activateFunctionMenuItem(menu)
+            }
+        }
+        return true
+    }
+
     private fun handleGraph(command: CalculatorCommand, graphAspect: Double) {
         state.zoomGraph?.let { zoom ->
             when (command) {
@@ -220,6 +343,9 @@ class CalculatorController(
 
     private fun switchView(view: CalculatorView) {
         state.view = view
+        state.compactMenu = null
+        state.functionMenu = null
+        state.fractionTemplate = null
         state.trace = null
         state.zoomGraph = null
         state.modifier = ModifierLayer.NORMAL
@@ -227,10 +353,233 @@ class CalculatorController(
         state.entryRecallPosition = 0
     }
 
+    private fun openCompactMenu(id: CompactMenuId) {
+        val returnView = state.view.takeIf {
+            it == CalculatorView.HOME ||
+                it == CalculatorView.Y_EQUALS ||
+                it == CalculatorView.WINDOW
+        } ?: CalculatorView.HOME
+        state.compactMenu = CompactMenuState(CompactMenuDefinitions.get(id), returnView)
+        state.functionMenu = null
+        state.fractionTemplate = null
+        state.view = CalculatorView.COMPACT_MENU
+        state.trace = null
+        state.zoomGraph = null
+        state.historyNavigationPosition = 0
+        state.entryRecallPosition = 0
+    }
+
+    private fun activateCompactMenuItem(menu: CompactMenuState) {
+        val token = menu.selectedItem.insertedToken ?: return
+        val returnView = menu.returnView
+        closeCompactMenu(menu)
+        when (returnView) {
+            CalculatorView.HOME ->
+                CalculatorDisplayMemory.appendMenuToken(token, state.insertMode)
+            CalculatorView.Y_EQUALS -> YEqualsMemory.append(token, state.insertMode)
+            CalculatorView.WINDOW -> WindowSettingsMemory.append(token, state.insertMode)
+            else -> Unit
+        }
+    }
+
+    private fun closeCompactMenu(menu: CompactMenuState) {
+        state.view = menu.returnView
+        state.compactMenu = null
+        state.modifier = ModifierLayer.NORMAL
+    }
+
+    private fun openFunctionMenu(tab: FunctionMenuTab) {
+        state.functionMenu?.let { existing ->
+            existing.selectTab(tab)
+            state.modifier = ModifierLayer.NORMAL
+            return
+        }
+
+        val targetView = state.view.takeIf(::isEditableView) ?: CalculatorView.HOME
+        if (targetView != state.view) switchView(targetView)
+        state.compactMenu = null
+        state.fractionTemplate = null
+        state.functionMenu = FunctionMenuState(tab, targetView)
+        state.trace = null
+        state.zoomGraph = null
+        state.historyNavigationPosition = 0
+        state.entryRecallPosition = 0
+        state.modifier = ModifierLayer.NORMAL
+    }
+
+    private fun activateFunctionMenuItem(menu: FunctionMenuState) {
+        when (val action = menu.selectedItem.action) {
+            is FunctionMenuAction.InsertToken -> {
+                closeFunctionMenu()
+                appendToEditor(menu.targetView, action.token)
+            }
+            is FunctionMenuAction.BeginFractionTemplate -> {
+                closeFunctionMenu()
+                state.fractionTemplate =
+                    FractionTemplateState(action.mixedNumber, menu.targetView)
+            }
+            FunctionMenuAction.Unavailable -> Unit
+        }
+    }
+
+    private fun closeFunctionMenu() {
+        state.functionMenu = null
+        state.modifier = ModifierLayer.NORMAL
+    }
+
+    private fun handleFractionTemplate(
+        command: CalculatorCommand,
+        template: FractionTemplateState
+    ) {
+        when (command) {
+            CalculatorCommand.Left -> template.moveLeft()
+            CalculatorCommand.Right -> if (template.moveRight()) commitFractionTemplate(template)
+            CalculatorCommand.Up -> template.moveUp()
+            CalculatorCommand.Down -> if (template.moveDown()) commitFractionTemplate(template)
+            CalculatorCommand.Delete -> template.deleteAtCursor()
+            CalculatorCommand.Clear -> {
+                if (!template.clearSelectedField()) state.fractionTemplate = null
+            }
+            CalculatorCommand.Enter -> commitFractionTemplate(template)
+            CalculatorCommand.Negative -> template.toggleSign()
+            else -> fractionTemplateText(command)?.let { template.append(it, state.insertMode) }
+        }
+    }
+
+    private fun commitFractionTemplate(template: FractionTemplateState) {
+        val expression = template.completedExpression() ?: return
+        val original = template.originalToken
+        val start = template.replacementStart
+        if (original == null || start == null) {
+            appendToEditor(template.targetView, expression)
+            state.fractionTemplate = null
+        } else if (replaceStructuredFraction(template.targetView, start, original, expression)) {
+            state.fractionTemplate = null
+        }
+    }
+
+    private fun reopenStructuredFractionBeforeCursor(): Boolean {
+        if (state.historyNavigationPosition != 0) return false
+        val (expression, cursor) = when (state.view) {
+            CalculatorView.HOME ->
+                CalculatorDisplayMemory.current() to CalculatorDisplayMemory.cursorPosition()
+            CalculatorView.Y_EQUALS -> {
+                val index = YEqualsMemory.selectedIndex
+                YEqualsMemory.equation(index) to YEqualsMemory.cursor(index)
+            }
+            CalculatorView.WINDOW -> {
+                val index = WindowSettingsMemory.selectedIndex
+                WindowSettingsMemory.value(index) to WindowSettingsMemory.cursor(index)
+            }
+            else -> return false
+        }
+        val token =
+            ExpressionEditingTokens.structuredFractionEndingAt(expression, cursor) ?: return false
+        val start = cursor - token.length
+        state.fractionTemplate =
+            FractionTemplateState.reopen(token, start, state.view) ?: return false
+        return true
+    }
+
+    private fun replaceStructuredFraction(
+        view: CalculatorView,
+        start: Int,
+        original: String,
+        replacement: String
+    ): Boolean = when (view) {
+        CalculatorView.HOME ->
+            CalculatorDisplayMemory.replaceStructuredFraction(start, original, replacement)
+        CalculatorView.Y_EQUALS ->
+            YEqualsMemory.replaceStructuredFraction(start, original, replacement)
+        CalculatorView.WINDOW ->
+            WindowSettingsMemory.replaceStructuredFraction(start, original, replacement)
+        else -> false
+    }
+
+    private fun appendToEditor(view: CalculatorView, text: String) {
+        when (view) {
+            CalculatorView.HOME -> CalculatorDisplayMemory.appendMenuToken(text, state.insertMode)
+            CalculatorView.Y_EQUALS -> YEqualsMemory.append(text, state.insertMode)
+            CalculatorView.WINDOW -> WindowSettingsMemory.append(text, state.insertMode)
+            else -> Unit
+        }
+    }
+
+    private fun fractionTemplateText(command: CalculatorCommand): String? = when (command) {
+        is CalculatorCommand.Digit -> command.value.toString()
+        is CalculatorCommand.Operator -> command.value.toString()
+        is CalculatorCommand.Function -> "${command.name}("
+        is CalculatorCommand.InsertVariable -> command.variable.symbol.toString()
+        CalculatorCommand.Decimal -> "."
+        CalculatorCommand.Square -> "^2"
+        CalculatorCommand.Reciprocal -> "^-1"
+        CalculatorCommand.OpenParenthesis -> "("
+        CalculatorCommand.CloseParenthesis -> ")"
+        CalculatorCommand.Comma -> ","
+        CalculatorCommand.Variable -> "X"
+        CalculatorCommand.InsertAns -> "Ans"
+        CalculatorCommand.InsertImaginaryUnit -> "i"
+        CalculatorCommand.InsertPi -> "π"
+        CalculatorCommand.InsertEuler -> "e"
+        CalculatorCommand.InsertInverseSine -> "sin⁻¹("
+        CalculatorCommand.InsertInverseCosine -> "cos⁻¹("
+        CalculatorCommand.InsertInverseTangent -> "tan⁻¹("
+        CalculatorCommand.InsertTenPower -> "10^("
+        CalculatorCommand.InsertEulerPower -> "e^("
+        CalculatorCommand.InsertSquareRoot -> "sqrt("
+        CalculatorCommand.InsertScientificExponent -> "EE"
+        else -> null
+    }
+
+    private fun isEditableView(view: CalculatorView): Boolean =
+        view == CalculatorView.HOME ||
+            view == CalculatorView.Y_EQUALS ||
+            view == CalculatorView.WINDOW
+
+    private fun toggleSecondModifier() {
+        state.modifier = if (state.modifier == ModifierLayer.SECOND) {
+            ModifierLayer.NORMAL
+        } else {
+            ModifierLayer.SECOND
+        }
+    }
+
+    private fun handleAlphaModifier() {
+        when {
+            state.alphaLocked -> {
+                state.alphaLocked = false
+                state.modifier = ModifierLayer.NORMAL
+            }
+            state.modifier == ModifierLayer.SECOND -> {
+                state.alphaLocked = true
+                state.modifier = ModifierLayer.NORMAL
+            }
+            state.modifier == ModifierLayer.ALPHA ->
+                state.modifier = ModifierLayer.NORMAL
+            else -> state.modifier = ModifierLayer.ALPHA
+        }
+    }
+
+    private fun effectiveModifierLayer(): ModifierLayer =
+        if (state.modifier != ModifierLayer.NORMAL) {
+            state.modifier
+        } else if (state.alphaLocked) {
+            ModifierLayer.ALPHA
+        } else {
+            ModifierLayer.NORMAL
+        }
+
+    private fun consumeTransientModifier() {
+        state.modifier = ModifierLayer.NORMAL
+    }
+
     private fun beginTrace() {
         val graphWindow = readGraphWindow()
         state.trace = graphWindow?.let { TraceState(0, (it.xMin + it.xMax) / 2.0) }
         state.view = CalculatorView.GRAPH
+        state.compactMenu = null
+        state.functionMenu = null
+        state.fractionTemplate = null
         state.zoomGraph = null
         state.modifier = ModifierLayer.NORMAL
         state.historyNavigationPosition = 0
@@ -514,6 +863,20 @@ class CalculatorController(
         CalculatorKey.SIN -> "E"
         CalculatorKey.COS -> "F"
         CalculatorKey.TAN -> "G"
+        else -> null
+    }
+
+    private fun digitHotkeyFor(key: CalculatorKey): String? = when (key) {
+        CalculatorKey.DIGIT_0 -> "0"
+        CalculatorKey.DIGIT_1 -> "1"
+        CalculatorKey.DIGIT_2 -> "2"
+        CalculatorKey.DIGIT_3 -> "3"
+        CalculatorKey.DIGIT_4 -> "4"
+        CalculatorKey.DIGIT_5 -> "5"
+        CalculatorKey.DIGIT_6 -> "6"
+        CalculatorKey.DIGIT_7 -> "7"
+        CalculatorKey.DIGIT_8 -> "8"
+        CalculatorKey.DIGIT_9 -> "9"
         else -> null
     }
 

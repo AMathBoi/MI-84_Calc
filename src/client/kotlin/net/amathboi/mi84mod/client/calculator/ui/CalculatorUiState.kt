@@ -10,6 +10,7 @@ enum class CalculatorView {
     MODE,
     ZOOM,
     ZOOM_FACTORS,
+    COMPACT_MENU,
     GRAPH
 }
 
@@ -50,6 +51,7 @@ data class GraphWindow(
 class CalculatorUiState {
     var view = CalculatorView.HOME
     var modifier = ModifierLayer.NORMAL
+    var alphaLocked = false
     var historyNavigationPosition = 0
     var entryRecallPosition = 0
     var insertMode = false
@@ -59,4 +61,7 @@ class CalculatorUiState {
     var zoomSelectedIndex = 0
     var memorySelectedIndex = 0
     var factorSelectedIndex = ZoomMemory.selectedDenominatorIndex()
+    var compactMenu: CompactMenuState? = null
+    var functionMenu: FunctionMenuState? = null
+    var fractionTemplate: FractionTemplateState? = null
 }

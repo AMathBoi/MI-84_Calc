@@ -100,7 +100,9 @@ object HomeViewController {
         val selected = CalculatorDisplayMemory.historyLineFromNewest(state.historyNavigationPosition)
         state.historyNavigationPosition = 0
         if (selected == null || selected.text.startsWith("Error:")) return
-        CalculatorDisplayMemory.appendRecalledHistory(selected.text)
+        CalculatorDisplayMemory.appendRecalledHistory(
+            CalculatorDisplayMemory.editableTextForHistoryLine(selected)
+        )
     }
 }
 
@@ -121,6 +123,7 @@ object YEqualsViewController {
             CalculatorCommand.Reciprocal -> YEqualsMemory.append("^-1", state.insertMode)
             CalculatorCommand.OpenParenthesis -> YEqualsMemory.append("(", state.insertMode)
             CalculatorCommand.CloseParenthesis -> YEqualsMemory.append(")", state.insertMode)
+            CalculatorCommand.Comma -> YEqualsMemory.append(",", state.insertMode)
             CalculatorCommand.Left -> YEqualsMemory.moveCursorLeft()
             CalculatorCommand.Right -> YEqualsMemory.moveCursorRight()
             CalculatorCommand.Up -> YEqualsMemory.selectPrevious()
@@ -144,6 +147,7 @@ object WindowViewController {
             CalculatorCommand.Decimal -> WindowSettingsMemory.append(".", state.insertMode)
             CalculatorCommand.OpenParenthesis -> WindowSettingsMemory.append("(", state.insertMode)
             CalculatorCommand.CloseParenthesis -> WindowSettingsMemory.append(")", state.insertMode)
+            CalculatorCommand.Comma -> WindowSettingsMemory.append(",", state.insertMode)
             CalculatorCommand.Left -> WindowSettingsMemory.moveCursorLeft()
             CalculatorCommand.Right -> WindowSettingsMemory.moveCursorRight()
             CalculatorCommand.Up -> WindowSettingsMemory.selectPrevious()

@@ -40,18 +40,35 @@ object YEqualsMemory {
     fun selectNext() = select(selectedIndex + 1)
 
     fun moveCursorLeft() {
-        if (cursors[selectedIndex] > 0) cursors[selectedIndex]--
+        val cursor = cursors[selectedIndex]
+        if (cursor > 0) {
+            cursors[selectedIndex] =
+                ExpressionEditingTokens.structuredFractionEndingAt(equations[selectedIndex], cursor)
+                    ?.let { cursor - it.length }
+                    ?: cursor - 1
+        }
     }
 
     fun moveCursorRight() {
-        if (cursors[selectedIndex] < equations[selectedIndex].length) cursors[selectedIndex]++
+        val expression = equations[selectedIndex]
+        val cursor = cursors[selectedIndex]
+        if (cursor < expression.length) {
+            cursors[selectedIndex] =
+                ExpressionEditingTokens.structuredFractionStartingAt(expression, cursor)
+                    ?.let { cursor + it.length }
+                    ?: cursor + 1
+        }
     }
 
     /** Calculator-style entry inserts or overwrites at the forward cursor. */
     fun append(text: String, insertMode: Boolean = false) {
         val expression = equations[selectedIndex]
         val cursor = cursors[selectedIndex]
-        val replacedLength = if (!insertMode && cursor < expression.length) 1 else 0
+        val replacedLength = if (!insertMode && cursor < expression.length) {
+            ExpressionEditingTokens.structuredFractionStartingAt(expression, cursor)?.length ?: 1
+        } else {
+            0
+        }
         if (expression.length - replacedLength + text.length > MAX_EXPRESSION_LENGTH) return
 
         equations[selectedIndex] = expression.removeRange(cursor, cursor + replacedLength)
@@ -60,11 +77,29 @@ object YEqualsMemory {
         save()
     }
 
+    fun replaceStructuredFraction(start: Int, original: String, replacement: String): Boolean {
+        val expression = equations[selectedIndex]
+        if (start !in 0..expression.length ||
+            !expression.regionMatches(start, original, 0, original.length) ||
+            expression.length - original.length + replacement.length > MAX_EXPRESSION_LENGTH
+        ) {
+            return false
+        }
+        equations[selectedIndex] =
+            expression.substring(0, start) + replacement +
+                expression.substring(start + original.length)
+        cursors[selectedIndex] = start + replacement.length
+        save()
+        return true
+    }
+
     fun deleteAtCursor() {
         val expression = equations[selectedIndex]
         val cursor = cursors[selectedIndex]
         if (cursor < expression.length) {
-            equations[selectedIndex] = expression.removeRange(cursor, cursor + 1)
+            val length =
+                ExpressionEditingTokens.structuredFractionStartingAt(expression, cursor)?.length ?: 1
+            equations[selectedIndex] = expression.removeRange(cursor, cursor + length)
             save()
         }
     }

@@ -2,6 +2,8 @@ package net.amathboi.mi84mod.client.calculator.input
 
 import net.amathboi.mi84mod.client.calculator.CalculatorVariable
 import net.amathboi.mi84mod.client.calculator.ui.CalculatorView
+import net.amathboi.mi84mod.client.calculator.ui.CompactMenuId
+import net.amathboi.mi84mod.client.calculator.ui.FunctionMenuTab
 
 enum class ModifierLayer {
     NORMAL,
@@ -15,6 +17,8 @@ sealed interface CalculatorCommand {
     data class Operator(val value: Char) : CalculatorCommand
     data class Function(val name: String) : CalculatorCommand
     data class OpenView(val view: CalculatorView) : CalculatorCommand
+    data class OpenCompactMenu(val menu: CompactMenuId) : CalculatorCommand
+    data class OpenFunctionMenu(val tab: FunctionMenuTab) : CalculatorCommand
     data object QuitToHome : CalculatorCommand
     data object BeginTrace : CalculatorCommand
     data object ToggleSecond : CalculatorCommand
@@ -82,10 +86,14 @@ object CalculatorKeyBindings {
         CalculatorKey.COMMA -> CalculatorCommand.InsertScientificExponent
         CalculatorKey.ENTER -> CalculatorCommand.RecallEntry
         CalculatorKey.DELETE -> CalculatorCommand.ToggleInsertMode
+        CalculatorKey.MATH -> CalculatorCommand.OpenCompactMenu(CompactMenuId.TEST)
+        CalculatorKey.APPS -> CalculatorCommand.OpenCompactMenu(CompactMenuId.ANGLE)
         else -> CalculatorCommand.Placeholder(key, ModifierLayer.SECOND)
     }
 
     private fun alphaCommand(key: CalculatorKey): CalculatorCommand = when (key) {
+        CalculatorKey.Y_EQUALS -> CalculatorCommand.OpenFunctionMenu(FunctionMenuTab.FRAC)
+        CalculatorKey.WINDOW -> CalculatorCommand.OpenFunctionMenu(FunctionMenuTab.FUNC)
         CalculatorKey.MATH -> CalculatorCommand.InsertVariable(CalculatorVariable.A)
         CalculatorKey.APPS -> CalculatorCommand.InsertVariable(CalculatorVariable.B)
         CalculatorKey.PROGRAM -> CalculatorCommand.InsertVariable(CalculatorVariable.C)

@@ -46,9 +46,9 @@ CalculatorWidget / Minecraft GuiGraphics
 - `input/CalculatorKey.kt` defines stable identities for all 50 physical keys.
 - `input/CalculatorKeyLayout.kt` defines texture-relative hitboxes only.
 - `input/CalculatorCommand.kt` maps physical keys and modifier layers to typed logical commands.
-- Primary commands are exhaustive. Phase 1 scalar 2nd meanings, Phase 2 ENTRY/INS, and Alpha
-  A-Z/θ have explicit typed commands; remaining unimplemented 2nd and Alpha meanings are explicit
-  placeholders.
+- Primary commands are exhaustive. Phase 1 scalar 2nd meanings, Phase 2 ENTRY/INS and Alpha A-Z/θ,
+  plus the approved Phase 4 TEST, ANGLE, F1 FRAC, and F2 FUNC menus have explicit typed commands;
+  remaining unimplemented 2nd and Alpha meanings are explicit placeholders.
 
 Visible legends are not identifiers. Code should compare `CalculatorKey.SIN`, not `"sin"`, and
 should never infer behavior from displayed text.
@@ -60,13 +60,22 @@ should never infer behavior from displayed text.
 - `controller/DispatchResult.kt` distinguishes handled input, unsupported primary keys, and planned
   modifier placeholders.
 - `ui/CalculatorUiState.kt` owns transient state: active view, modifier layer, history/ENTRY
-  selection, insert/overwrite mode, trace state, and interactive zoom state.
+  selection, insert/overwrite mode, persistent-session A-LOCK, compact-menu selection, function-menu
+  overlay and fraction-template editing, trace state, and interactive zoom state.
+- `ui/CompactMenuState.kt` defines reusable non-Minecraft tab/item/menu models and approved compact
+  menu contents. Unavailable items have no insertion token and cannot activate.
+- `ui/FunctionMenuState.kt` defines the separate bottom-tab F1–F4 overlay, editable origin target,
+  typed F1/F2 actions, and transient structured fraction fields.
+- `ExpressionEditingTokens.kt` recognizes completed `frac`/`mixed` storage forms as one cursor,
+  overwrite, and forward-delete token across Home, Y=, and Window.
 
 Persistent calculator content does not belong in `CalculatorUiState`.
 
 ### Rendering
 
 - `CalculatorRenderer` reads controller state and persistent stores to draw non-graph LCD views.
+- The renderer draws A-LOCK in the shared mode header and renders compact menus, bottom-tab function
+  overlays, unavailable items, and compact inline structured fractions without owning menu behavior.
 - `CalculatorGraphRenderer` draws axes, functions, trace, and interactive zoom markers.
 - `CalculatorTextRenderer` supplies the shared half-scale Minecraft text primitive.
 - Rendering must not mutate calculator behavior or persistent data, except the established Home
@@ -84,6 +93,25 @@ Persistent calculator content does not belong in `CalculatorUiState`.
 - The real and complex evaluators share the Phase 1 expression vocabulary: explicit `Ans`, `i`,
   `π`, `e`, inverse trig, `10^(`, `e^(`, `sqrt(`, and `EE`. Complex inverse functions and square
   root use principal values, while Degree/Radian mode controls inverse-trig output.
+- Phase 3 established evaluator-only relations, numeric Boolean logic, comma-separated function
+  arguments, and approved MATH/NUM scalar helpers before any matching menu was exposed. MATH and
+  DISTR remain deferred, and probability functions remain outside the implementation until their
+  numerical strategy is approved.
+- Phase 4 exposes reviewed TEST/LOGIC and partial ANGLE entry paths. Boolean word operators are
+  whole editor tokens. Postfix degree/radian markers and rectangular/polar coordinate conversions
+  live in the evaluator; DMS parsing/output remains unavailable.
+- Phase 4 F1/F2 use a distinct overlay that retains Home, Y=, or Window as an explicit insertion
+  target and redirects non-editable origins to Home. FRAC emits `frac`/`mixed` evaluator tokens and
+  prefers reduced exact results unless the expression contains a decimal point. FUNC exposes
+  `abs`, `logBASE`, `sqrt`, `nthRoot`, `nPr`, `nCr`, and postfix factorial while keeping numerical
+  derivative, integral, and summation unavailable. Quit closes only this overlay, and rendering
+  translates internal fraction tokens and fraction answers into a small stacked bar at the text
+  cursor. History-result recall reconstructs the structured fraction token so its exact-answer
+  preference is not lost. Left at the token's trailing edge reopens transient denominator-first
+  editing while retaining the original token until the edited replacement is committed. Template
+  fields use character-level forward cursors rather than whole-field selection. Their cursor block
+  uses the shared 500 ms blink cadence and is drawn in unscaled font space before the fraction
+  transform to avoid per-character rounding drift.
 - `YEqualsMemory`, `WindowSettingsMemory`, `ModeSettingsMemory`, and `ZoomMemory` own their respective
   persistent domains.
 - `CalculatorPersistence` is the only general file-writing boundary. New stores must use it rather
@@ -96,15 +124,16 @@ Persistent calculator content does not belong in `CalculatorUiState`.
 For every input event, the controller resolves behavior in this order:
 
 1. The physical `2nd` or `Alpha` modifier key.
-2. Active-view modifier overrides, currently physical Zoom Alpha A-G shortcuts. Other Alpha
-   variables remain typed commands and are ignored by views that do not edit expressions.
+2. Active-view physical overrides: compact-menu navigation/numeric hotkeys/direct-view exits and
+   Zoom Alpha A-G shortcuts. Explicit one-shot modifiers still prevent normal-command fallthrough.
 3. The command from the active Normal, 2nd, or Alpha layer.
 4. Direct view transitions such as Mode, Window, Graph, Trace, and 2nd Mode Quit.
 5. The active view controller.
 
-2nd and Alpha are one-shot layers. Pressing the same modifier twice cancels it. A non-modifier key
-consumes the layer even when its mapping is only a placeholder. Placeholders must not fall through to
-the primary command.
+2nd and Alpha are normally one-shot layers. Pressing the same modifier twice cancels it. `2nd` then
+Alpha enables persistent A-LOCK; Alpha cancels it, and a temporary 2nd command returns to it. A
+non-modifier key consumes a one-shot layer even when its mapping is only a placeholder. Placeholders
+must not fall through to the primary command.
 
 ## Adding or changing a button
 
@@ -127,6 +156,14 @@ Automated tests should cover:
 - exhaustive primary mappings;
 - explicit 2nd and Alpha placeholders;
 - typed Phase 1/2 mappings, ENTRY cycling, INS editor behavior, and Alpha A-Z/θ coverage;
+- Phase 3 evaluator precedence, arity/domain errors, complex behavior, and deferred-menu isolation;
+- A-LOCK activation/cancellation, temporary 2nd restoration, compact-menu navigation/insertion,
+  unavailable rows, origin returns, direct-view exits, and no-fallthrough behavior;
+- whole-token Boolean cursor behavior plus angle-marker precedence, Angle Unit overrides,
+  coordinate conversions, and disabled DMS rows;
+- F1/F2 overlay origins, bottom-tab navigation, unavailable F3/F4 and calculus rows, structured
+  fraction completion, context-sensitive Quit, exact-fraction preference, decimal override, and
+  FUNC scalar domains;
 - modifier cancellation and one-shot consumption;
 - direct and view-specific state transitions;
 - evaluator, persistence, history, graph, trace, and zoom edge cases.

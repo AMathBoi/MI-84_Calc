@@ -25,8 +25,8 @@ Y=, or Window depending on the active view.
 
 | Physical key | Normal command | Normal status | 2nd command | 2nd status | Alpha command | Alpha status |
 |---|---|---|---|---|---|---|
-| Y= | Open Y= view | Complete | STAT PLOT menu | Deferred — subsystem and visual review | F1 FRAC shortcut menu | Deferred — visual review |
-| Window | Open Window view | Complete | TBLSET screen | Deferred — visual review | F2 FUNC shortcut menu | Deferred — visual review |
+| Y= | Open Y= view | Complete | STAT PLOT menu | Deferred — subsystem and visual review | F1 FRAC function-menu overlay | Complete — approved Phase 4 overlay and fraction template |
+| Window | Open Window view | Complete | TBLSET screen | Deferred — visual review | F2 FUNC function-menu overlay | Partial — approved Phase 4 overlay; numerical calculus rows visibly unavailable |
 | Zoom | Open Zoom view | Complete | FORMAT screen | Deferred — visual review | F3 MTRX shortcut menu | Deferred — subsystem and visual review |
 | Trace | Begin trace in Graph | Complete | CALC graph-analysis menu | Deferred — visual review | F4 YVAR shortcut menu | Deferred — visual review |
 | Graph | Open Graph view | Complete | TABLE view | Deferred — visual review | F5 context-sensitive special menu | Deferred — visual review |
@@ -35,13 +35,13 @@ Y=, or Window depending on the active view.
 | Del | Forward delete | Complete | INS: toggle insert/overwrite editing | Complete | No shifted function | No shifted function |
 | Down | Move/select down | Complete | No shifted function | No shifted function | No shifted function | No shifted function |
 | Up | Move/select up | Complete | No shifted function | No shifted function | No shifted function | No shifted function |
-| Alpha | Toggle one-shot Alpha layer | Complete | A-LOCK: persistent Alpha lock | Deferred — visual review | Toggle/cancel Alpha | Complete |
+| Alpha | Toggle one-shot Alpha layer | Complete | A-LOCK: persistent Alpha lock | Complete | Toggle/cancel Alpha | Complete |
 | X,T,θ,n | Insert `X` | Complete | LINK SEND/RECEIVE screen | Deferred — subsystem and visual review | Fraction template | Deferred — visual review |
 | Stat | STAT EDIT/CALC/TESTS menu | Deferred — subsystem and visual review | LIST NAMES/OPS/MATH menu | Deferred — subsystem and visual review | No shifted function | No shifted function |
 | Left | Move/select left | Complete | No shifted function | No shifted function | No shifted function | No shifted function |
 | Right | Move/select right | Complete | No shifted function | No shifted function | No shifted function | No shifted function |
-| Math | MATH/NUM/CMPLX/PROB/FRAC menu | Deferred — visual review | TEST/LOGIC/CONDITIONS menu | Deferred — visual review | Insert `A`; Zoom shortcut A in Zoom | Complete |
-| Apps | Installed-applications menu | Deferred — subsystem and visual review | ANGLE menu | Deferred — visual review | Insert `B`; Zoom shortcut B in Zoom | Complete |
+| Math | MATH/NUM/CMPLX/PROB/FRAC menu | Deferred — visual review | TEST/LOGIC/CONDITIONS menu | Partial: TEST/LOGIC complete; CONDITIONS visible but unavailable pending template review | Insert `A`; Zoom shortcut A in Zoom | Complete |
+| Apps | Installed-applications menu | Deferred — subsystem and visual review | ANGLE menu | Partial: degree/radian markers and coordinate conversions complete; minute and `►DMS` visibly unavailable | Insert `B`; Zoom shortcut B in Zoom | Complete |
 | Prgm | PRGM EXEC/EDIT/NEW menu | Deferred — subsystem and visual review | DRAW/POINTS/STO menu | Deferred — subsystem and visual review | Insert `C`; Zoom shortcut C in Zoom | Complete |
 | Vars | VARS/Y-VARS menu | Deferred — visual review | DISTR/DRAW menu | Deferred — subsystem and visual review | No shifted function | No shifted function |
 | Clear | Clear active editor/value | Complete | No shifted function | No shifted function | No shifted function | No shifted function |
@@ -51,7 +51,7 @@ Y=, or Window depending on the active view.
 | tan | Insert `tan(` | Complete | Insert `tan⁻¹(` | Complete | Insert `G`; Zoom shortcut G in Zoom | Complete |
 | ^ | Insert exponent operator | Complete | Insert `π` | Complete | Insert `H` | Complete |
 | x² | Apply/insert square | Complete | Insert linear `sqrt(` | Complete | Insert `I` | Complete |
-| , | Insert comma | Partial: editor accepts it; evaluator rejects unsupported arguments | Insert `EE` exponent marker | Complete | Insert `J` | Complete |
+| , | Insert comma | Partial: evaluates implemented multi-argument scalar functions; broader function families remain deferred | Insert `EE` exponent marker | Complete | Insert `J` | Complete |
 | ( | Insert opening parenthesis | Complete | Insert `{` list opener | Deferred — subsystem | Insert `K` | Complete |
 | ) | Insert closing parenthesis | Complete | Insert `}` list closer | Deferred — subsystem | Insert `L` | Complete |
 | ÷ | Insert division operator | Complete | Insert Euler's constant `e` | Complete | Insert `M` | Complete |
@@ -86,6 +86,7 @@ Y=, or Window depending on the active view.
 | Mode | Four-way option/category navigation |
 | Zoom | Tabs, menu movement, physical numeric shortcuts, and physical Alpha A-G shortcuts |
 | Zoom Factors | Factor movement, selection, and physical numeric shortcuts 1-6 |
+| Compact token menu | Tabs, row navigation, physical numeric hotkeys, Enter selection, Clear cancellation, and direct-view exits |
 | Graph | Trace movement or interactive zoom cursor movement |
 
 ## Placeholder policy

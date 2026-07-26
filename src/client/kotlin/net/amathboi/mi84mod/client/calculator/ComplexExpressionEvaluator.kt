@@ -86,6 +86,8 @@ internal data class ComplexNumber(val real: Double, val imaginary: Double = 0.0)
 
     fun isFinite(): Boolean = real.isFinite() && imaginary.isFinite()
 
+    fun magnitude(): Double = hypot(real, imaginary)
+
     private companion object {
         val IMAGINARY_UNIT = ComplexNumber(0.0, 1.0)
     }
@@ -103,10 +105,66 @@ internal class ComplexExpressionEvaluator(
     private var index = 0
 
     fun parse(): ComplexNumber {
-        val result = parseSum()
+        val result = parseLogic()
         check(index == expression.length) { "Unexpected expression content" }
         check(result.isFinite()) { "Function result is outside the supported range" }
         return result
+    }
+
+    private fun parseLogic(): ComplexNumber {
+        var result = parseAnd()
+        while (true) {
+            val operator = when {
+                expression.startsWith("or", index) -> "or"
+                expression.startsWith("xor", index) -> "xor"
+                else -> return result
+            }
+            index += operator.length
+            val right = parseAnd()
+            result = booleanResult(
+                if (operator == "or") isTrue(result) || isTrue(right)
+                else isTrue(result) xor isTrue(right)
+            )
+        }
+    }
+
+    private fun parseAnd(): ComplexNumber {
+        var result = parseRelation()
+        while (expression.startsWith("and", index)) {
+            index += 3
+            val right = parseRelation()
+            result = booleanResult(isTrue(result) && isTrue(right))
+        }
+        return result
+    }
+
+    private fun parseRelation(): ComplexNumber {
+        var result = parseSum()
+        while (true) {
+            val operator = RELATIONAL_OPERATORS.firstOrNull {
+                expression.startsWith(it, index)
+            } ?: return result
+            index += operator.length
+            val right = parseSum()
+            result = booleanResult(
+                when (operator) {
+                    "=" -> result == right
+                    "≠" -> result != right
+                    ">", "≥", "<", "≤" -> {
+                        check(result.imaginary == 0.0 && right.imaginary == 0.0) {
+                            "Complex values cannot be ordered"
+                        }
+                        when (operator) {
+                            ">" -> result.real > right.real
+                            "≥" -> result.real >= right.real
+                            "<" -> result.real < right.real
+                            else -> result.real <= right.real
+                        }
+                    }
+                    else -> error("Unsupported relation: $operator")
+                }
+            )
+        }
     }
 
     private fun parseSum(): ComplexNumber {
@@ -147,13 +205,29 @@ internal class ComplexExpressionEvaluator(
             )
 
     private fun parsePower(): ComplexNumber {
-        val result = parsePrimary()
+        val result = parsePostfix()
         return if (index < expression.length && expression[index] == '^') {
             index++
             result.pow(parseUnary())
         } else {
             result
         }
+    }
+
+    private fun parsePostfix(): ComplexNumber {
+        var result = parsePrimary()
+        while (index < expression.length &&
+            (expression[index] == DEGREE_MARKER || expression[index] == RADIAN_MARKER)
+        ) {
+            result = when (expression[index++]) {
+                DEGREE_MARKER ->
+                    if (degrees) result else result * ComplexNumber(Math.PI / 180.0)
+                RADIAN_MARKER ->
+                    if (degrees) result * ComplexNumber(180.0 / Math.PI) else result
+                else -> error("Unsupported angle marker")
+            }
+        }
+        return result
     }
 
     private fun parseUnary(): ComplexNumber =
@@ -194,15 +268,15 @@ internal class ComplexExpressionEvaluator(
                 "Expected opening parenthesis after $function"
             }
             index++
-            val argument = parseSum()
+            val arguments = parseFunctionArguments()
             check(index < expression.length && expression[index] == ')') { "Missing closing parenthesis" }
             index++
-            return evaluateFunction(function, argument)
+            return evaluateFunction(function, arguments)
         }
 
         if (index < expression.length && expression[index] == '(') {
             index++
-            val result = parseSum()
+            val result = parseLogic()
             check(index < expression.length && expression[index] == ')') { "Missing closing parenthesis" }
             index++
             return result
@@ -241,7 +315,34 @@ internal class ComplexExpressionEvaluator(
         return ComplexNumber(mantissa * Math.pow(10.0, exponent.toDouble()))
     }
 
-    private fun evaluateFunction(function: String, argument: ComplexNumber): ComplexNumber {
+    private fun parseFunctionArguments(): List<ComplexNumber> {
+        check(index < expression.length && expression[index] != ')') {
+            "A function argument is required"
+        }
+        val arguments = mutableListOf<ComplexNumber>()
+        do {
+            arguments += parseLogic()
+            if (index >= expression.length || expression[index] != ',') break
+            index++
+            check(index < expression.length && expression[index] != ')') {
+                "A function argument is required after comma"
+            }
+        } while (true)
+        return arguments
+    }
+
+    private fun evaluateFunction(function: String, arguments: List<ComplexNumber>): ComplexNumber {
+        if (function == "not") {
+            check(arguments.size == 1) { "not requires one argument" }
+            return booleanResult(!isTrue(arguments.single()))
+        }
+        if (function == "abs") {
+            check(arguments.size == 1) { "abs requires one argument" }
+            return ComplexNumber(arguments.single().magnitude())
+        }
+
+        check(arguments.size == 1) { "$function requires one argument" }
+        val argument = arguments.single()
         val adjustedArgument = if (degrees && function in TRIG_FUNCTIONS) {
             argument * ComplexNumber(Math.PI / 180.0)
         } else {
@@ -268,6 +369,12 @@ internal class ComplexExpressionEvaluator(
         return angleAdjustedResult
     }
 
+    private fun isTrue(value: ComplexNumber): Boolean =
+        value.real != 0.0 || value.imaginary != 0.0
+
+    private fun booleanResult(value: Boolean): ComplexNumber =
+        ComplexNumber(if (value) 1.0 else 0.0)
+
     private companion object {
         const val ANSWER_TOKEN = "Ans"
         const val SCIENTIFIC_EXPONENT_TOKEN = "EE"
@@ -277,12 +384,16 @@ internal class ComplexExpressionEvaluator(
         const val INVERSE_COSINE = "cos⁻¹"
         const val INVERSE_TANGENT = "tan⁻¹"
         const val SQUARE_ROOT = "sqrt"
+        const val DEGREE_MARKER = '°'
+        const val RADIAN_MARKER = 'ʳ'
         const val MAX_SCIENTIFIC_EXPONENT = 4_000
         val FUNCTIONS = listOf(
             INVERSE_SINE,
             INVERSE_COSINE,
             INVERSE_TANGENT,
             SQUARE_ROOT,
+            "abs",
+            "not",
             "sin",
             "cos",
             "tan",
@@ -291,5 +402,6 @@ internal class ComplexExpressionEvaluator(
         )
         val TRIG_FUNCTIONS = setOf("sin", "cos", "tan")
         val INVERSE_TRIG_FUNCTIONS = setOf(INVERSE_SINE, INVERSE_COSINE, INVERSE_TANGENT)
+        val RELATIONAL_OPERATORS = listOf("≠", "≥", "≤", "=", ">", "<")
     }
 }

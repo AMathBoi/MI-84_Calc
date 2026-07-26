@@ -17,6 +17,7 @@ import net.amathboi.mi84mod.client.calculator.input.CalculatorInputEvent
 import net.amathboi.mi84mod.client.calculator.input.CalculatorKey
 import net.amathboi.mi84mod.client.calculator.input.ModifierLayer
 import net.amathboi.mi84mod.client.calculator.ui.CalculatorView
+import net.amathboi.mi84mod.client.calculator.ui.FunctionMenuTab
 
 class CalculatorRegressionTest {
     @BeforeTest
@@ -696,6 +697,492 @@ class CalculatorRegressionTest {
         assertTrue(Files.exists(TEST_CONFIG.resolve("mi84_calc_scalar_variables.txt")))
     }
 
+    @Test
+    fun phaseThreeRelationsReturnNumericBooleansAfterArithmeticEvaluation() {
+        listOf(
+            "2+3=5" to "1",
+            "2≠3" to "1",
+            "3>2" to "1",
+            "3≥3" to "1",
+            "2<3" to "1",
+            "2≤2" to "1",
+            "2+3*4>13" to "1",
+            "4<2" to "0"
+        ).forEach { (expression, expected) ->
+            submitRaw(expression)
+            assertEquals(expected, CalculatorDisplayMemory.allSubmitted().last().result)
+        }
+    }
+
+    @Test
+    fun phaseThreeBooleanOperationsUseNumericTruthAndDocumentedPrecedence() {
+        listOf(
+            "1or0and0" to "1",
+            "1xor1" to "0",
+            "1or1xor1" to "0",
+            "not(0)" to "1",
+            "not(-2)" to "0",
+            "2<3and4≥4" to "1",
+            "2>3or4<1" to "0"
+        ).forEach { (expression, expected) ->
+            submitRaw(expression)
+            assertEquals(expected, CalculatorDisplayMemory.allSubmitted().last().result)
+        }
+    }
+
+    @Test
+    fun phaseThreeMultiArgumentParsingRejectsStrayCommasAndBadArity() {
+        listOf(
+            "min(3,1)" to "1",
+            "max(1,min(3,2))" to "2",
+            "min(3,2" to "2",
+            "1,2" to "Error: Syntax",
+            "gcd(1)" to "Error: Syntax",
+            "min(1,)" to "Error: Syntax",
+            "min(3,1,2)" to "Error: Syntax"
+        ).forEach { (expression, expected) ->
+            submitRaw(expression)
+            assertEquals(expected, CalculatorDisplayMemory.allSubmitted().last().result)
+        }
+    }
+
+    @Test
+    fun phaseThreeMathAndNumberHelpersUseDefinedScalarSemantics() {
+        listOf(
+            "abs(-3)" to "3",
+            "round(1.235,2)" to "1.24",
+            "round(-1.5)" to "-1.5",
+            "round(1.234567890123)" to "1.23456789",
+            "iPart(-1.7)" to "-1",
+            "fPart(-1.7)" to "-0.7",
+            "int(-1.7)" to "-2",
+            "gcd(48,18)" to "6",
+            "lcm(48,18)" to "144",
+            "remainder(7,3)" to "1",
+            "gcd(1.5,2)" to "Error: Syntax",
+            "gcd(-1,2)" to "Error: Syntax",
+            "lcm(1000000000001,2)" to "Error: Syntax",
+            "remainder(-7,3)" to "Error: Syntax",
+            "remainder(7.5,3)" to "Error: Syntax",
+            "remainder(1,0)" to "Error: Division by zero"
+        ).forEach { (expression, expected) ->
+            submitRaw(expression)
+            assertEquals(expected, CalculatorDisplayMemory.allSubmitted().last().result)
+        }
+    }
+
+    @Test
+    fun phaseThreeComplexRelationsBooleansAndAbsoluteValueAreExplicit() {
+        selectRectangularComplexMode()
+
+        listOf(
+            "i=i" to "1",
+            "i≠1" to "1",
+            "not(i)" to "0",
+            "abs(3+4i)" to "5",
+            "i>0" to "Error: Syntax"
+        ).forEach { (expression, expected) ->
+            submitRaw(expression)
+            assertEquals(expected, CalculatorDisplayMemory.allSubmitted().last().result)
+        }
+    }
+
+    @Test
+    fun phaseThreeExpressionsWorkForGraphsAndCommaRoutesThroughExistingEditors() {
+        assertEquals(1.0, CalculatorDisplayMemory.evaluateForGraph("X>0andX≤2", 1.0))
+        assertEquals(0.0, CalculatorDisplayMemory.evaluateForGraph("X>0andX≤2", 3.0))
+        assertEquals(2.0, CalculatorDisplayMemory.evaluateForGraph("min(X,2)", 3.0))
+
+        val controller = CalculatorController()
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.Y_EQUALS))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.COMMA))
+        assertEquals(",", YEqualsMemory.equation(0))
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.WINDOW))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.COMMA))
+        assertEquals("-10,", WindowSettingsMemory.value(0))
+    }
+
+    @Test
+    fun approvedAlphaLockPersistsUsesTemporarySecondAndCancelsWithAlpha() {
+        val controller = CalculatorController()
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.SECOND))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ALPHA))
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.MATH))
+        assertEquals("A", CalculatorDisplayMemory.current())
+        assertTrue(controller.state.alphaLocked)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.SECOND))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.SIN))
+        assertEquals("Asin⁻¹(", CalculatorDisplayMemory.current())
+        assertTrue(controller.state.alphaLocked)
+        assertEquals(ModifierLayer.NORMAL, controller.state.modifier)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.SECOND))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.MATH))
+        assertEquals(CalculatorView.COMPACT_MENU, controller.state.view)
+        assertTrue(controller.state.alphaLocked)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_1))
+        assertEquals(CalculatorView.HOME, controller.state.view)
+        assertEquals("Asin⁻¹(=", CalculatorDisplayMemory.current())
+        assertTrue(controller.state.alphaLocked)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.SECOND))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.MATH))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.WINDOW))
+        assertEquals(CalculatorView.WINDOW, controller.state.view)
+        assertTrue(controller.state.alphaLocked)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ALPHA))
+        assertFalse(controller.state.alphaLocked)
+    }
+
+    @Test
+    fun testMenuNavigatesTabsRowsAndPastesLogicTokensIntoTheOriginEditor() {
+        val controller = CalculatorController()
+        CalculatorDisplayMemory.appendDigit('1')
+        dispatchSecond(controller, CalculatorKey.MATH)
+
+        val menu = controller.state.compactMenu!!
+        assertEquals(CalculatorView.COMPACT_MENU, controller.state.view)
+        assertEquals("TEST", menu.selectedTab.label)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DOWN))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DOWN))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        assertEquals("LOGIC", menu.selectedTab.label)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DOWN))
+        assertEquals("or", menu.selectedItem.label)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.LEFT))
+        assertEquals(2, menu.selectedItemIndex)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ENTER))
+
+        assertEquals(CalculatorView.HOME, controller.state.view)
+        assertEquals("1or", CalculatorDisplayMemory.current())
+        CalculatorDisplayMemory.appendDigit('0')
+        CalculatorDisplayMemory.submit()
+        assertEquals("1", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.Y_EQUALS))
+        dispatchSecond(controller, CalculatorKey.MATH)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_3))
+        assertEquals(CalculatorView.Y_EQUALS, controller.state.view)
+        assertEquals(">", YEqualsMemory.equation(0))
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.WINDOW))
+        WindowSettingsMemory.clearSelected()
+        dispatchSecond(controller, CalculatorKey.MATH)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_4))
+        assertEquals(CalculatorView.WINDOW, controller.state.view)
+        assertEquals("≥", WindowSettingsMemory.value(0))
+    }
+
+    @Test
+    fun unavailableConditionsStayOpenAndClearReturnsWithoutChangingTheEditor() {
+        val controller = CalculatorController()
+        CalculatorDisplayMemory.appendDigit('7')
+        dispatchSecond(controller, CalculatorKey.MATH)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+
+        val menu = controller.state.compactMenu!!
+        assertEquals("CONDITIONS", menu.selectedTab.label)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_1))
+        assertEquals(CalculatorView.COMPACT_MENU, controller.state.view)
+        assertFalse(menu.selectedItem.available)
+        assertEquals("7", CalculatorDisplayMemory.current())
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ENTER))
+        assertEquals(CalculatorView.COMPACT_MENU, controller.state.view)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.CLEAR))
+        assertEquals(CalculatorView.HOME, controller.state.view)
+        assertEquals("7", CalculatorDisplayMemory.current())
+    }
+
+    @Test
+    fun compactMenuDirectViewKeysCancelItAndNonEditorOriginsReturnHome() {
+        val controller = CalculatorController()
+        dispatchSecond(controller, CalculatorKey.MATH)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.WINDOW))
+        assertEquals(CalculatorView.WINDOW, controller.state.view)
+        assertEquals(null, controller.state.compactMenu)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.MODE))
+        dispatchSecond(controller, CalculatorKey.MATH)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_1))
+        assertEquals(CalculatorView.HOME, controller.state.view)
+        assertEquals("=", CalculatorDisplayMemory.current())
+    }
+
+    @Test
+    fun booleanWordOperatorsMoveOverwriteAndDeleteAsWholeEditorTokens() {
+        listOf("and", "or", "xor").forEach { operator ->
+            CalculatorDisplayMemory.clearCurrent()
+            CalculatorDisplayMemory.appendRecalledHistory("1${operator}0")
+
+            CalculatorDisplayMemory.moveCursorLeft()
+            assertEquals(operator.length + 1, CalculatorDisplayMemory.cursorPosition())
+            CalculatorDisplayMemory.moveCursorLeft()
+            assertEquals(1, CalculatorDisplayMemory.cursorPosition())
+            CalculatorDisplayMemory.moveCursorRight()
+            assertEquals(operator.length + 1, CalculatorDisplayMemory.cursorPosition())
+            CalculatorDisplayMemory.moveCursorLeft()
+            CalculatorDisplayMemory.appendDigit('9')
+            assertEquals("190", CalculatorDisplayMemory.current())
+
+            CalculatorDisplayMemory.clearCurrent()
+            CalculatorDisplayMemory.appendRecalledHistory("1${operator}0")
+            CalculatorDisplayMemory.moveCursorLeft()
+            CalculatorDisplayMemory.moveCursorLeft()
+            CalculatorDisplayMemory.deleteAtCursor()
+            assertEquals("10", CalculatorDisplayMemory.current())
+        }
+    }
+
+    @Test
+    fun angleMarkersOverrideTheActiveAngleMode() {
+        submitRaw("sin(30°)")
+        assertEquals(
+            0.5,
+            CalculatorDisplayMemory.allSubmitted().last().rawResult!!.toDouble(),
+            1.0e-15
+        )
+
+        selectDegreeMode()
+        submitRaw("sin((π/2)ʳ)")
+        assertEquals(
+            1.0,
+            CalculatorDisplayMemory.allSubmitted().last().rawResult!!.toDouble(),
+            1.0e-15
+        )
+    }
+
+    @Test
+    fun angleCoordinateConversionsRespectDegreeAndRadianModes() {
+        listOf(
+            "R►Pr(3,4)" to 5.0,
+            "R►Pθ(0,1)" to Math.PI / 2.0,
+            "P►Rx(2,π)" to -2.0,
+            "P►Ry(2,π/2)" to 2.0
+        ).forEach { (expression, expected) ->
+            submitRaw(expression)
+            assertEquals(
+                expected,
+                CalculatorDisplayMemory.allSubmitted().last().rawResult!!.toDouble(),
+                1.0e-12
+            )
+        }
+
+        selectDegreeMode()
+        listOf(
+            "R►Pθ(0,1)" to "90",
+            "P►Rx(2,60)" to "1",
+            "P►Ry(2,30)" to "1"
+        ).forEach { (expression, expected) ->
+            submitRaw(expression)
+            assertEquals(expected, CalculatorDisplayMemory.allSubmitted().last().result)
+        }
+    }
+
+    @Test
+    fun angleMenuShowsAllRowsPastesApprovedTokensAndKeepsDmsRowsUnavailable() {
+        val controller = CalculatorController()
+        CalculatorDisplayMemory.appendDigit('3')
+        CalculatorDisplayMemory.appendDigit('0')
+        dispatchSecond(controller, CalculatorKey.APPS)
+
+        val menu = controller.state.compactMenu!!
+        assertEquals("ANGLE", menu.selectedTab.label)
+        assertEquals(8, menu.selectedTab.items.size)
+        assertFalse(menu.selectedTab.items[1].available)
+        assertFalse(menu.selectedTab.items[3].available)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_2))
+        assertEquals(CalculatorView.COMPACT_MENU, controller.state.view)
+        assertEquals("30", CalculatorDisplayMemory.current())
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_1))
+        assertEquals(CalculatorView.HOME, controller.state.view)
+        assertEquals("30°", CalculatorDisplayMemory.current())
+
+        CalculatorDisplayMemory.clearCurrent()
+        dispatchSecond(controller, CalculatorKey.APPS)
+        repeat(7) { controller.dispatch(CalculatorInputEvent(CalculatorKey.DOWN)) }
+        assertEquals("P►Ry(", controller.state.compactMenu!!.selectedItem.label)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ENTER))
+        assertEquals("P►Ry(", CalculatorDisplayMemory.current())
+    }
+
+    @Test
+    fun functionMenusOverlayEditableViewsAndRedirectNonEditorsToHome() {
+        val controller = CalculatorController()
+        dispatchAlpha(controller, CalculatorKey.Y_EQUALS)
+
+        assertEquals(CalculatorView.HOME, controller.state.view)
+        assertEquals(FunctionMenuTab.FRAC, controller.state.functionMenu!!.selectedTab)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        assertEquals(FunctionMenuTab.FUNC, controller.state.functionMenu!!.selectedTab)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        assertEquals(FunctionMenuTab.MTRX, controller.state.functionMenu!!.selectedTab)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        assertEquals(FunctionMenuTab.YVAR, controller.state.functionMenu!!.selectedTab)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.CLEAR))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.Y_EQUALS))
+        dispatchAlpha(controller, CalculatorKey.WINDOW)
+        assertEquals(CalculatorView.Y_EQUALS, controller.state.view)
+        assertEquals(CalculatorView.Y_EQUALS, controller.state.functionMenu!!.targetView)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_1))
+        assertEquals("abs(", YEqualsMemory.equation(0))
+        assertEquals(null, controller.state.functionMenu)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.MODE))
+        dispatchAlpha(controller, CalculatorKey.Y_EQUALS)
+        assertEquals(CalculatorView.HOME, controller.state.view)
+        assertEquals(CalculatorView.HOME, controller.state.functionMenu!!.targetView)
+    }
+
+    @Test
+    fun quitClosesTheFunctionMenuWithoutLeavingItsEditableView() {
+        val controller = CalculatorController()
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.Y_EQUALS))
+        dispatchAlpha(controller, CalculatorKey.WINDOW)
+        assertEquals(CalculatorView.Y_EQUALS, controller.state.view)
+        assertTrue(controller.state.functionMenu != null)
+
+        dispatchSecond(controller, CalculatorKey.MODE)
+
+        assertEquals(CalculatorView.Y_EQUALS, controller.state.view)
+        assertEquals(null, controller.state.functionMenu)
+        assertEquals(ModifierLayer.NORMAL, controller.state.modifier)
+
+        dispatchSecond(controller, CalculatorKey.MODE)
+        assertEquals(CalculatorView.HOME, controller.state.view)
+    }
+
+    @Test
+    fun fractionTemplatesProduceReducedFractionsUnlessDecimalInputIsPresent() {
+        val controller = CalculatorController()
+        dispatchAlpha(controller, CalculatorKey.Y_EQUALS)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_1))
+        assertTrue(controller.state.fractionTemplate != null)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_1))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_2))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        assertEquals("frac(1,2)", CalculatorDisplayMemory.current())
+        CalculatorDisplayMemory.submit()
+        assertEquals("1/2", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        submitRaw("frac(1,2)+frac(1,3)")
+        assertEquals("5/6", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        submitRaw("frac(1,2)+0.25")
+        assertEquals("0.75", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        submitRaw("mixed(2,1,4)")
+        assertEquals("9/4", CalculatorDisplayMemory.allSubmitted().last().result)
+    }
+
+    @Test
+    fun completedStructuredFractionsRemainAtomicAcrossEditableViews() {
+        val fraction = "frac(1,2)"
+        CalculatorDisplayMemory.appendMenuToken(fraction)
+        CalculatorDisplayMemory.moveCursorLeft()
+        assertEquals(0, CalculatorDisplayMemory.cursorPosition())
+        CalculatorDisplayMemory.moveCursorRight()
+        assertEquals(fraction.length, CalculatorDisplayMemory.cursorPosition())
+
+        YEqualsMemory.append(fraction)
+        YEqualsMemory.moveCursorLeft()
+        assertEquals(0, YEqualsMemory.cursor(0))
+        YEqualsMemory.moveCursorRight()
+        assertEquals(fraction.length, YEqualsMemory.cursor(0))
+
+        WindowSettingsMemory.clearSelected()
+        WindowSettingsMemory.append(fraction)
+        WindowSettingsMemory.moveCursorLeft()
+        assertEquals(0, WindowSettingsMemory.cursor(0))
+        WindowSettingsMemory.deleteAtCursor()
+        assertEquals("", WindowSettingsMemory.value(0))
+    }
+
+    @Test
+    fun leftReopensACompletedFractionAtDenominatorThenNumerator() {
+        val original = "frac(12,34)"
+        CalculatorDisplayMemory.appendMenuToken(original)
+        val controller = CalculatorController()
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.LEFT))
+        val template = controller.state.fractionTemplate!!
+        assertEquals(1, template.selectedFieldIndex)
+        assertEquals("34", template.field(1))
+        assertEquals(0, template.cursor(1))
+        assertEquals(original, CalculatorDisplayMemory.current())
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.LEFT))
+        assertEquals(0, template.selectedFieldIndex)
+        assertEquals("12", template.field(0))
+        assertEquals(1, template.cursor(0))
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DOWN))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.CLEAR))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_5))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ENTER))
+        assertEquals("frac(12,5)", CalculatorDisplayMemory.current())
+        assertEquals(null, controller.state.fractionTemplate)
+    }
+
+    @Test
+    fun recallingAFractionResultPreservesItsStructuredFractionBehavior() {
+        submitRaw("frac(1,2)")
+        val controller = CalculatorController()
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.UP))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ENTER))
+
+        assertEquals("frac(1,2)", CalculatorDisplayMemory.current())
+        CalculatorDisplayMemory.submit()
+        assertEquals("1/2", CalculatorDisplayMemory.allSubmitted().last().result)
+    }
+
+    @Test
+    fun functionMenuScalarOperationsEvaluateAndUnavailableRowsStayOpen() {
+        val controller = CalculatorController()
+        dispatchAlpha(controller, CalculatorKey.WINDOW)
+        val menu = controller.state.functionMenu!!
+        assertEquals(FunctionMenuTab.FUNC, menu.selectedTab)
+        assertEquals(10, menu.items.size)
+        assertFalse(menu.items[1].available)
+        assertFalse(menu.items[2].available)
+        assertFalse(menu.items[3].available)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_2))
+        assertEquals(menu, controller.state.functionMenu)
+        assertEquals("", CalculatorDisplayMemory.current())
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_5))
+        assertEquals("logBASE(", CalculatorDisplayMemory.current())
+
+        CalculatorDisplayMemory.clearCurrent()
+        listOf(
+            "abs(-5)" to "5",
+            "logBASE(8,2)" to "3",
+            "nthRoot(27,3)" to "3",
+            "nPr(5,2)" to "20",
+            "nCr(5,2)" to "10",
+            "5!" to "120"
+        ).forEach { (expression, expected) ->
+            submitRaw(expression)
+            assertEquals(expected, CalculatorDisplayMemory.allSubmitted().last().result)
+        }
+    }
+
+    private fun submitRaw(expression: String) {
+        CalculatorDisplayMemory.appendRecalledHistory(expression)
+        CalculatorDisplayMemory.submit()
+    }
+
     private fun enter(expression: String) {
         expression.forEach { character ->
             when {
@@ -726,6 +1213,11 @@ class CalculatorRegressionTest {
 
     private fun dispatchSecond(controller: CalculatorController, key: CalculatorKey) {
         controller.dispatch(CalculatorInputEvent(CalculatorKey.SECOND))
+        controller.dispatch(CalculatorInputEvent(key))
+    }
+
+    private fun dispatchAlpha(controller: CalculatorController, key: CalculatorKey) {
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ALPHA))
         controller.dispatch(CalculatorInputEvent(key))
     }
 
