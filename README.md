@@ -20,12 +20,6 @@ Currently, the calculator includes all scientific functions, basic graphing feat
 
 For a complete public status table covering every button and major feature area, see [Feature Status](FEATURE_STATUS.md).
 
-## Project Development Timeline
-
-1. Implement all buttons
-2. Visually clean up calculator
-3. Launch to other mod loaders and game versions
-
 ## Known issues
 
 - Some values that should evaluate to an exact number can contain small floating-point errors. For example, `sin(π)` may return a very small non-zero value instead of `0`.
