@@ -19,7 +19,6 @@ All notable changes to MI-84 Calculator are documented here.
 
 ### Changed
 
-- The calculator remains a client-side, draggable inventory overlay with crisp pixel-art rendering.
 - Visible but unfinished calculator operations are explicitly unavailable instead of falling back
   to a different key action.
 
