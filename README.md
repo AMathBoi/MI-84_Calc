@@ -1,8 +1,27 @@
-The Minecraft Instruments 84: an all-in-one calculator for blocky calculations! 
+The Minecraft Instruments 84: an all-in-one calculator for blocky calculations!
 
-This mod aims to have a fully functional graphing calculator to Minecraft. 
+MI-84 Calculator adds a draggable graphing-calculator overlay to the Minecraft inventory.
+Version 0.2 targets Minecraft 1.21.1 with Fabric Loader, Fabric API, and Fabric Language Kotlin.
 
-The MI-84 is draggable at the top and its postion can be reset by a keybind(default "N"). Click the button at the bottom left of the inventory to toggle the calculator. 
+## Using the calculator
+
+Open an inventory, then click the `X` button at its bottom-left corner to show the calculator.
+Drag the calculator from its top strip. The default controls, active only while an inventory is open,
+are:
+
+- `N` — reset calculator position
+- `H` — toggle calculator visibility
+- `K` — toggle the inventory `X` button
+
+All three bindings can be changed in Minecraft's Controls menu under **MI-84 Calculator**.
+
+The calculator includes expression history, persistent scalar variables, Y= and Window editors,
+graphing and trace, zoom controls, real and rectangular-complex calculation, fractions, and the
+implemented TEST, ANGLE, MATH, NUM, CMPLX, PROB, FRAC, and function-menu entries. Some visible
+calculator functions are intentionally unavailable while they are still under development.
+
+For a complete public status table covering every button and major feature area, see
+[Feature Status](FEATURE_STATUS.md).
 
 ## Known issues
 
