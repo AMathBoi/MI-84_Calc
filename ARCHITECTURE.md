@@ -47,8 +47,8 @@ CalculatorWidget / Minecraft GuiGraphics
 - `input/CalculatorKeyLayout.kt` defines texture-relative hitboxes only.
 - `input/CalculatorCommand.kt` maps physical keys and modifier layers to typed logical commands.
 - Primary commands are exhaustive. Phase 1 scalar 2nd meanings, Phase 2 ENTRY/INS and Alpha A-Z/θ,
-  plus the approved Phase 4 TEST, ANGLE, F1 FRAC, and F2 FUNC menus have explicit typed commands;
-  remaining unimplemented 2nd and Alpha meanings are explicit placeholders.
+  plus the approved Phase 4 TEST, ANGLE, MATH-family, F1 FRAC, and F2 FUNC menus have explicit typed
+  commands; remaining unimplemented 2nd and Alpha meanings are explicit placeholders.
 
 Visible legends are not identifiers. Code should compare `CalculatorKey.SIN`, not `"sin"`, and
 should never infer behavior from displayed text.
@@ -63,11 +63,13 @@ should never infer behavior from displayed text.
   selection, insert/overwrite mode, persistent-session A-LOCK, compact-menu selection, function-menu
   overlay and fraction-template editing, trace state, and interactive zoom state.
 - `ui/CompactMenuState.kt` defines reusable non-Minecraft tab/item/menu models and approved compact
-  menu contents. Unavailable items have no insertion token and cannot activate.
+  menu contents. Unavailable items have no action and cannot activate.
 - `ui/FunctionMenuState.kt` defines the separate bottom-tab F1–F4 overlay, editable origin target,
   typed F1/F2 actions, and transient structured fraction fields.
 - `ExpressionEditingTokens.kt` recognizes completed `frac`/`mixed` storage forms as one cursor,
   overwrite, and forward-delete token across Home, Y=, and Window.
+- `MathDisplayTokens.kt` recognizes complete and in-progress fraction, root, permutation, and
+  combination evaluator tokens for nonlinear LCD presentation without changing stored expressions.
 
 Persistent calculator content does not belong in `CalculatorUiState`.
 
@@ -75,7 +77,10 @@ Persistent calculator content does not belong in `CalculatorUiState`.
 
 - `CalculatorRenderer` reads controller state and persistent stores to draw non-graph LCD views.
 - The renderer draws A-LOCK in the shared mode header and renders compact menus, bottom-tab function
-  overlays, unavailable items, and compact inline structured fractions without owning menu behavior.
+  overlays, unavailable items, compact inline structured fractions, adaptive radicals, and
+  subscripted permutation/combination notation without owning menu behavior. Empty indexed-root
+  indices and empty combinatoric operands include dotted placeholders; controller routing advances
+  those fields, and cursor geometry follows their reduced/lowered text.
 - `CalculatorGraphRenderer` draws axes, functions, trace, and interactive zoom markers.
 - `CalculatorTextRenderer` supplies the shared half-scale Minecraft text primitive.
 - Rendering must not mutate calculator behavior or persistent data, except the established Home
@@ -94,24 +99,33 @@ Persistent calculator content does not belong in `CalculatorUiState`.
   `π`, `e`, inverse trig, `10^(`, `e^(`, `sqrt(`, and `EE`. Complex inverse functions and square
   root use principal values, while Degree/Radian mode controls inverse-trig output.
 - Phase 3 established evaluator-only relations, numeric Boolean logic, comma-separated function
-  arguments, and approved MATH/NUM scalar helpers before any matching menu was exposed. MATH and
-  DISTR remain deferred, and probability functions remain outside the implementation until their
-  numerical strategy is approved.
+  arguments, and approved MATH/NUM scalar helpers before any matching menu was exposed. Phase 4's
+  approved MATH-family menu now exposes those helpers, cube/cube-root entry, shared fraction
+  templates, `nPr`, `nCr`, and factorial while leaving dependent rows unavailable. DISTR and random
+  generators remain deferred.
 - Phase 4 exposes reviewed TEST/LOGIC and partial ANGLE entry paths. Boolean word operators are
   whole editor tokens. Postfix degree/radian markers and rectangular/polar coordinate conversions
   live in the evaluator; DMS parsing/output remains unavailable.
 - Phase 4 F1/F2 use a distinct overlay that retains Home, Y=, or Window as an explicit insertion
   target and redirects non-editable origins to Home. FRAC emits `frac`/`mixed` evaluator tokens and
   prefers reduced exact results unless the expression contains a decimal point. FUNC exposes
-  `abs`, `logBASE`, `sqrt`, `nthRoot`, `nPr`, `nCr`, and postfix factorial while keeping numerical
-  derivative, integral, and summation unavailable. Quit closes only this overlay, and rendering
+  `abs`, `logBASE`, square/indexed roots, permutations, combinations, and postfix factorial while
+  keeping numerical derivative, integral, and summation unavailable. Quit closes only this overlay, and rendering
   translates internal fraction tokens and fraction answers into a small stacked bar at the text
   cursor. History-result recall reconstructs the structured fraction token so its exact-answer
   preference is not lost. Left at the token's trailing edge reopens transient denominator-first
-  editing while retaining the original token until the edited replacement is committed. Template
-  fields use character-level forward cursors rather than whole-field selection. Their cursor block
-  uses the shared 500 ms blink cadence and is drawn in unscaled font space before the fraction
-  transform to avoid per-character rounding drift.
+  editing while retaining the original token until the edited replacement is committed. Moving
+  Left past the first numerator/whole-number element commits valid edits, or restores an incomplete
+  original, and exits to the cursor position before the structured token. Template fields use
+  character-level forward cursors rather than whole-field selection. Their cursor block uses the
+  shared 500 ms blink cadence and is drawn in unscaled font space before the fraction transform to
+  avoid per-character rounding drift. At the token's leading edge the ordinary cursor is rendered
+  as a narrow block before the stacked symbol; Right reopens the first field and traverses the
+  fraction left-to-right.
+- New indexed-root entry uses internal `root(index,value)` order so Right follows the visual
+  index-to-radicand sequence; persisted `nthRoot(value,index)` expressions remain supported.
+  Incomplete indexed roots and `nPr`/`nCr` advance to their second field with Right and add their
+  closing delimiter when Right leaves the completed second field.
 - `YEqualsMemory`, `WindowSettingsMemory`, `ModeSettingsMemory`, and `ZoomMemory` own their respective
   persistent domains.
 - `CalculatorPersistence` is the only general file-writing boundary. New stores must use it rather

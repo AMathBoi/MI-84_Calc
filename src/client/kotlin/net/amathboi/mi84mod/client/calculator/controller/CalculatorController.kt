@@ -8,7 +8,10 @@ import kotlin.math.roundToInt
 import net.amathboi.mi84mod.client.calculator.CalculatorDisplayMemory
 import net.amathboi.mi84mod.client.calculator.ExpressionEditingTokens
 import net.amathboi.mi84mod.client.calculator.GraphNavigationMath
+import net.amathboi.mi84mod.client.calculator.MathDisplayToken
+import net.amathboi.mi84mod.client.calculator.MathDisplayTokens
 import net.amathboi.mi84mod.client.calculator.ModeSettingsMemory
+import net.amathboi.mi84mod.client.calculator.RootFieldOrder
 import net.amathboi.mi84mod.client.calculator.WindowSettingsMemory
 import net.amathboi.mi84mod.client.calculator.YEqualsMemory
 import net.amathboi.mi84mod.client.calculator.ZoomMemory
@@ -20,6 +23,7 @@ import net.amathboi.mi84mod.client.calculator.input.ModifierLayer
 import net.amathboi.mi84mod.client.calculator.ui.CalculatorUiState
 import net.amathboi.mi84mod.client.calculator.ui.CalculatorView
 import net.amathboi.mi84mod.client.calculator.ui.CompactMenuDefinitions
+import net.amathboi.mi84mod.client.calculator.ui.CompactMenuAction
 import net.amathboi.mi84mod.client.calculator.ui.CompactMenuId
 import net.amathboi.mi84mod.client.calculator.ui.CompactMenuState
 import net.amathboi.mi84mod.client.calculator.ui.FractionTemplateState
@@ -150,6 +154,12 @@ class CalculatorController(
         if (command == CalculatorCommand.Left && reopenStructuredFractionBeforeCursor()) {
             return DispatchResult.Handled
         }
+        if (command == CalculatorCommand.Right && reopenStructuredFractionAtCursor()) {
+            return DispatchResult.Handled
+        }
+        if (command == CalculatorCommand.Right && advanceIncompleteMathNotation()) {
+            return DispatchResult.Handled
+        }
 
         when (state.view) {
             CalculatorView.HOME -> HomeViewController.handle(command, state)
@@ -243,6 +253,11 @@ class CalculatorController(
             CalculatorCommand.Clear -> closeCompactMenu(menu)
             is CalculatorCommand.Digit -> {
                 if (menu.selectHotkey(command.value.toString())) {
+                    activateCompactMenuItem(menu)
+                }
+            }
+            is CalculatorCommand.InsertVariable -> {
+                if (menu.selectHotkey(command.variable.symbol.toString())) {
                     activateCompactMenuItem(menu)
                 }
             }
@@ -370,15 +385,19 @@ class CalculatorController(
     }
 
     private fun activateCompactMenuItem(menu: CompactMenuState) {
-        val token = menu.selectedItem.insertedToken ?: return
-        val returnView = menu.returnView
-        closeCompactMenu(menu)
-        when (returnView) {
-            CalculatorView.HOME ->
-                CalculatorDisplayMemory.appendMenuToken(token, state.insertMode)
-            CalculatorView.Y_EQUALS -> YEqualsMemory.append(token, state.insertMode)
-            CalculatorView.WINDOW -> WindowSettingsMemory.append(token, state.insertMode)
-            else -> Unit
+        when (val action = menu.selectedItem.action) {
+            is CompactMenuAction.InsertToken -> {
+                val returnView = menu.returnView
+                closeCompactMenu(menu)
+                appendToEditor(returnView, action.token)
+            }
+            is CompactMenuAction.BeginFractionTemplate -> {
+                val returnView = menu.returnView
+                closeCompactMenu(menu)
+                state.fractionTemplate =
+                    FractionTemplateState(action.mixedNumber, returnView)
+            }
+            CompactMenuAction.Unavailable -> Unit
         }
     }
 
@@ -432,7 +451,7 @@ class CalculatorController(
         template: FractionTemplateState
     ) {
         when (command) {
-            CalculatorCommand.Left -> template.moveLeft()
+            CalculatorCommand.Left -> if (template.moveLeft()) exitFractionTemplateLeft(template)
             CalculatorCommand.Right -> if (template.moveRight()) commitFractionTemplate(template)
             CalculatorCommand.Up -> template.moveUp()
             CalculatorCommand.Down -> if (template.moveDown()) commitFractionTemplate(template)
@@ -446,15 +465,38 @@ class CalculatorController(
         }
     }
 
-    private fun commitFractionTemplate(template: FractionTemplateState) {
-        val expression = template.completedExpression() ?: return
+    private fun exitFractionTemplateLeft(template: FractionTemplateState) {
+        val committed = commitFractionTemplate(template)
+        if (!committed) {
+            // The backing editor still contains the original completed fraction, if any.
+            state.fractionTemplate = null
+        }
+        if (committed || template.originalToken != null) {
+            moveEditorCursorLeft(template.targetView)
+        }
+    }
+
+    private fun commitFractionTemplate(template: FractionTemplateState): Boolean {
+        val expression = template.completedExpression() ?: return false
         val original = template.originalToken
         val start = template.replacementStart
         if (original == null || start == null) {
             appendToEditor(template.targetView, expression)
             state.fractionTemplate = null
+            return true
         } else if (replaceStructuredFraction(template.targetView, start, original, expression)) {
             state.fractionTemplate = null
+            return true
+        }
+        return false
+    }
+
+    private fun moveEditorCursorLeft(view: CalculatorView) {
+        when (view) {
+            CalculatorView.HOME -> CalculatorDisplayMemory.moveCursorLeft()
+            CalculatorView.Y_EQUALS -> YEqualsMemory.moveCursorLeft()
+            CalculatorView.WINDOW -> WindowSettingsMemory.moveCursorLeft()
+            else -> Unit
         }
     }
 
@@ -479,6 +521,71 @@ class CalculatorController(
         state.fractionTemplate =
             FractionTemplateState.reopen(token, start, state.view) ?: return false
         return true
+    }
+
+    private fun reopenStructuredFractionAtCursor(): Boolean {
+        if (state.historyNavigationPosition != 0) return false
+        val (expression, cursor) = when (state.view) {
+            CalculatorView.HOME ->
+                CalculatorDisplayMemory.current() to CalculatorDisplayMemory.cursorPosition()
+            CalculatorView.Y_EQUALS -> {
+                val index = YEqualsMemory.selectedIndex
+                YEqualsMemory.equation(index) to YEqualsMemory.cursor(index)
+            }
+            CalculatorView.WINDOW -> {
+                val index = WindowSettingsMemory.selectedIndex
+                WindowSettingsMemory.value(index) to WindowSettingsMemory.cursor(index)
+            }
+            else -> return false
+        }
+        val token =
+            ExpressionEditingTokens.structuredFractionStartingAt(expression, cursor) ?: return false
+        state.fractionTemplate =
+            FractionTemplateState.reopen(token, cursor, state.view, fromStart = true) ?: return false
+        return true
+    }
+
+    private fun advanceIncompleteMathNotation(): Boolean {
+        val (expression, cursor) = when (state.view) {
+            CalculatorView.HOME ->
+                CalculatorDisplayMemory.current() to CalculatorDisplayMemory.cursorPosition()
+            CalculatorView.Y_EQUALS -> {
+                val index = YEqualsMemory.selectedIndex
+                YEqualsMemory.equation(index) to YEqualsMemory.cursor(index)
+            }
+            CalculatorView.WINDOW -> {
+                val index = WindowSettingsMemory.selectedIndex
+                WindowSettingsMemory.value(index) to WindowSettingsMemory.cursor(index)
+            }
+            else -> return false
+        }
+        if (cursor != expression.length) return false
+        return when (val token = MathDisplayTokens.incompleteEndingAt(expression, cursor)) {
+            is MathDisplayToken.Combinatoric -> {
+                if (!token.rightOperandEntered && token.leftOperand.isNotBlank()) {
+                    appendToEditor(state.view, ",")
+                    true
+                } else if (token.rightOperandEntered && token.rightOperand.isNotBlank()) {
+                    appendToEditor(state.view, ")")
+                    true
+                } else {
+                    false
+                }
+            }
+            is MathDisplayToken.Root -> {
+                if (token.fieldOrder != RootFieldOrder.INDEX_THEN_RADICAND) return false
+                if (!token.secondFieldEntered && token.index?.isNotBlank() == true) {
+                    appendToEditor(state.view, ",")
+                    true
+                } else if (token.secondFieldEntered && token.radicand.isNotBlank()) {
+                    appendToEditor(state.view, ")")
+                    true
+                } else {
+                    false
+                }
+            }
+            else -> false
+        }
     }
 
     private fun replaceStructuredFraction(

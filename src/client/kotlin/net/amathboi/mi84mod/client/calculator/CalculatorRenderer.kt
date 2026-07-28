@@ -33,6 +33,15 @@ class CalculatorRenderer(private val controller: CalculatorController) {
         // Keep the LCD font proportional to the calculator's new half-size footprint.
         private const val DISPLAY_TEXT_SCALE = 0.5f
         private const val FRACTION_TEXT_SCALE = 0.28f
+        private const val ROOT_SYMBOL_SCALE = 0.58f
+        private const val ROOT_INDEX_SCALE = 0.32f
+        private const val ROOT_CONTENT_GAP = 1
+        private const val ROOT_EMPTY_INDEX_WIDTH = 3
+        private const val ROOT_EMPTY_RADICAND_WIDTH = 4
+        private const val COMBINATORIC_OPERATOR_SCALE = 0.58f
+        private const val COMBINATORIC_OPERAND_SCALE = 0.34f
+        private const val COMBINATORIC_EMPTY_OPERAND_WIDTH = 2
+        private const val COMBINATORIC_OPERATOR_GAP = 1
         private const val DISPLAY_LINE_HEIGHT = 6
         private const val DISPLAY_TEXT_COLOR = 0xFF1F1F1F.toInt()
         private const val DISPLAY_DIVIDER_COLOR = 0xFF555555.toInt()
@@ -55,14 +64,12 @@ class CalculatorRenderer(private val controller: CalculatorController) {
     private val state get() = controller.state
     private val graphRenderer = CalculatorGraphRenderer(controller)
     private data class FractionAnchor(val x: Int, val lineY: Int, val suffix: String)
-    private data class DisplayFraction(
-        val start: Int,
-        val endExclusive: Int,
-        val whole: String?,
-        val numerator: String,
-        val denominator: String
+    private data class EditorCursorBounds(
+        val left: Int,
+        val width: Int,
+        val topOffset: Int,
+        val bottomOffset: Int
     )
-
     private var fractionAnchor: FractionAnchor? = null
     private var x = 0
     private var y = 0
@@ -669,46 +676,250 @@ class CalculatorRenderer(private val controller: CalculatorController) {
         left: Int,
         lineY: Int
     ): Int {
-        val fraction = findDisplayFraction(text)
-        if (fraction == null) {
+        val token = MathDisplayTokens.firstIn(text)
+        if (token == null) {
             drawDisplayText(guiGraphics, text, left, lineY)
             return measureDisplayText(text)
         }
 
         var drawLeft = left
-        val prefix = text.substring(0, fraction.start)
+        val prefix = text.substring(0, token.start)
         drawDisplayText(guiGraphics, prefix, drawLeft, lineY)
         drawLeft += measureDisplayText(prefix)
 
-        fraction.whole?.let { whole ->
-            drawDisplayText(guiGraphics, whole, drawLeft, lineY)
-            drawLeft += measureDisplayText(whole) + 1
+        drawLeft += when (token) {
+            is MathDisplayToken.Fraction -> {
+                token.whole?.let { whole ->
+                    drawDisplayText(guiGraphics, whole, drawLeft, lineY)
+                    drawLeft += measureDisplayText(whole) + 1
+                }
+                val fractionWidth =
+                    completedFractionWidth(token.numerator, token.denominator)
+                drawCompletedFraction(
+                    guiGraphics,
+                    token.numerator,
+                    token.denominator,
+                    drawLeft,
+                    lineY,
+                    fractionWidth
+                )
+                fractionWidth + 1
+            }
+            is MathDisplayToken.Root ->
+                drawRoot(guiGraphics, token, drawLeft, lineY)
+            is MathDisplayToken.Combinatoric ->
+                drawCombinatoric(guiGraphics, token, drawLeft, lineY)
         }
 
-        val fractionWidth = completedFractionWidth(fraction.numerator, fraction.denominator)
-        drawCompletedFraction(
-            guiGraphics,
-            fraction.numerator,
-            fraction.denominator,
-            drawLeft,
-            lineY,
-            fractionWidth
-        )
-        drawLeft += fractionWidth + 1
-
-        val suffix = text.substring(fraction.endExclusive)
+        val suffix = text.substring(token.endExclusive)
         drawLeft += drawMathExpression(guiGraphics, suffix, drawLeft, lineY)
         return drawLeft - left
     }
 
     private fun measureMathExpression(text: String): Int {
-        val fraction = findDisplayFraction(text) ?: return measureDisplayText(text)
-        return measureDisplayText(text.substring(0, fraction.start)) +
-            (fraction.whole?.let(::measureDisplayText) ?: 0) +
-            (if (fraction.whole == null) 0 else 1) +
-            completedFractionWidth(fraction.numerator, fraction.denominator) +
-            1 +
-            measureMathExpression(text.substring(fraction.endExclusive))
+        val token = MathDisplayTokens.firstIn(text) ?: return measureDisplayText(text)
+        return measureDisplayText(text.substring(0, token.start)) +
+            measureMathToken(token) +
+            measureMathExpression(text.substring(token.endExclusive))
+    }
+
+    /** Maps a raw editor prefix to the matching position inside nonlinear notation. */
+    private fun measureMathCursorPrefix(text: String): Int {
+        val token = MathDisplayTokens.firstIn(text) ?: return measureDisplayText(text)
+        val prefixWidth = measureDisplayText(text.substring(0, token.start))
+        val tokenWidth = when (token) {
+            is MathDisplayToken.Combinatoric ->
+                if (!token.complete && !token.rightOperandEntered) {
+                    measureScaledText(token.leftOperand, COMBINATORIC_OPERAND_SCALE)
+                } else if (!token.complete) {
+                    combinatoricOperandWidth(token.leftOperand) +
+                        COMBINATORIC_OPERATOR_GAP +
+                        measureScaledText(token.operator.toString(), COMBINATORIC_OPERATOR_SCALE) +
+                        measureScaledText(token.rightOperand, COMBINATORIC_OPERAND_SCALE)
+                } else {
+                    measureMathToken(token)
+                }
+            is MathDisplayToken.Root ->
+                if (!token.complete) measureIncompleteRootCursor(token)
+                else measureMathToken(token)
+            is MathDisplayToken.Fraction -> measureMathToken(token)
+        }
+        return prefixWidth + tokenWidth +
+            measureMathCursorPrefix(text.substring(token.endExclusive))
+    }
+
+    private fun measureMathToken(token: MathDisplayToken): Int = when (token) {
+        is MathDisplayToken.Fraction ->
+            (token.whole?.let(::measureDisplayText) ?: 0) +
+                (if (token.whole == null) 0 else 1) +
+                completedFractionWidth(token.numerator, token.denominator) +
+                1
+        is MathDisplayToken.Root -> measureRoot(token)
+        is MathDisplayToken.Combinatoric -> measureCombinatoric(token)
+    }
+
+    private fun drawRoot(
+        guiGraphics: GuiGraphics,
+        root: MathDisplayToken.Root,
+        left: Int,
+        lineY: Int
+    ): Int {
+        val index = root.index.orEmpty()
+        val indexWidth = rootIndexWidth(root)
+        if (index.isNotEmpty()) {
+            drawScaledDisplayText(
+                guiGraphics,
+                index,
+                left,
+                lineY - 2,
+                ROOT_INDEX_SCALE
+            )
+        }
+        if (root.fieldOrder != RootFieldOrder.RADICAND_ONLY && index.isEmpty()) {
+            drawDottedBox(
+                guiGraphics,
+                left - 1,
+                lineY - 3,
+                left + indexWidth,
+                lineY + 1
+            )
+        }
+
+        val radicalLeft = left + indexWidth
+        drawScaledDisplayText(
+            guiGraphics,
+            "√",
+            radicalLeft,
+            lineY - 1,
+            ROOT_SYMBOL_SCALE
+        )
+        val radicalWidth = measureScaledText("√", ROOT_SYMBOL_SCALE).coerceAtLeast(3)
+        val radicandLeft = radicalLeft + radicalWidth + ROOT_CONTENT_GAP
+        val radicandWidth =
+            measureMathExpression(root.radicand).coerceAtLeast(ROOT_EMPTY_RADICAND_WIDTH)
+        drawMathExpression(guiGraphics, root.radicand, radicandLeft, lineY)
+        guiGraphics.fill(
+            radicalLeft + radicalWidth - 1,
+            lineY - 2,
+            radicandLeft + radicandWidth,
+            lineY - 1,
+            DISPLAY_TEXT_COLOR
+        )
+        return indexWidth + radicalWidth + ROOT_CONTENT_GAP + radicandWidth
+    }
+
+    private fun measureRoot(root: MathDisplayToken.Root): Int {
+        val radicalWidth = measureScaledText("√", ROOT_SYMBOL_SCALE).coerceAtLeast(3)
+        return rootIndexWidth(root) + radicalWidth + ROOT_CONTENT_GAP +
+            measureMathExpression(root.radicand).coerceAtLeast(ROOT_EMPTY_RADICAND_WIDTH)
+    }
+
+    private fun rootIndexWidth(root: MathDisplayToken.Root): Int =
+        root.index.orEmpty().takeIf(String::isNotEmpty)
+            ?.let { measureScaledText(it, ROOT_INDEX_SCALE) + 1 }
+            ?: if (root.fieldOrder != RootFieldOrder.RADICAND_ONLY) {
+                ROOT_EMPTY_INDEX_WIDTH
+            } else {
+                0
+            }
+
+    private fun measureIncompleteRootCursor(root: MathDisplayToken.Root): Int {
+        val indexCursor = measureScaledText(root.index.orEmpty(), ROOT_INDEX_SCALE)
+        val radicandCursor =
+            rootIndexWidth(root) +
+                measureScaledText("√", ROOT_SYMBOL_SCALE).coerceAtLeast(3) +
+                ROOT_CONTENT_GAP +
+                measureMathExpression(root.radicand)
+        return when (root.fieldOrder) {
+            RootFieldOrder.INDEX_THEN_RADICAND ->
+                if (root.secondFieldEntered) radicandCursor else indexCursor
+            RootFieldOrder.RADICAND_THEN_INDEX ->
+                if (root.secondFieldEntered) indexCursor else radicandCursor
+            RootFieldOrder.RADICAND_ONLY -> radicandCursor
+        }
+    }
+
+    private fun drawCombinatoric(
+        guiGraphics: GuiGraphics,
+        token: MathDisplayToken.Combinatoric,
+        left: Int,
+        lineY: Int
+    ): Int {
+        val leftWidth = combinatoricOperandWidth(token.leftOperand)
+        drawScaledDisplayText(
+            guiGraphics,
+            token.leftOperand,
+            left,
+            lineY + 2,
+            COMBINATORIC_OPERAND_SCALE
+        )
+        if (token.leftOperand.isEmpty()) {
+            drawDottedBox(
+                guiGraphics,
+                left - 1,
+                lineY + 1,
+                left + leftWidth,
+                lineY + DISPLAY_LINE_HEIGHT - 1
+            )
+        }
+        val operatorLeft = left + leftWidth + COMBINATORIC_OPERATOR_GAP
+        val operator = token.operator.toString()
+        drawScaledDisplayText(
+            guiGraphics,
+            operator,
+            operatorLeft,
+            lineY - 1,
+            COMBINATORIC_OPERATOR_SCALE
+        )
+        val operatorWidth = measureScaledText(operator, COMBINATORIC_OPERATOR_SCALE)
+        drawScaledDisplayText(
+            guiGraphics,
+            token.rightOperand,
+            operatorLeft + operatorWidth,
+            lineY + 2,
+            COMBINATORIC_OPERAND_SCALE
+        )
+        if (token.rightOperand.isEmpty()) {
+            val rightLeft = operatorLeft + operatorWidth
+            drawDottedBox(
+                guiGraphics,
+                rightLeft - 1,
+                lineY + 1,
+                rightLeft + combinatoricOperandWidth(token.rightOperand),
+                lineY + DISPLAY_LINE_HEIGHT - 1
+            )
+        }
+        return measureCombinatoric(token)
+    }
+
+    private fun measureCombinatoric(token: MathDisplayToken.Combinatoric): Int =
+        combinatoricOperandWidth(token.leftOperand) +
+            COMBINATORIC_OPERATOR_GAP +
+            measureScaledText(token.operator.toString(), COMBINATORIC_OPERATOR_SCALE) +
+            combinatoricOperandWidth(token.rightOperand)
+
+    private fun combinatoricOperandWidth(text: String): Int =
+        measureScaledText(text, COMBINATORIC_OPERAND_SCALE)
+            .coerceAtLeast(COMBINATORIC_EMPTY_OPERAND_WIDTH)
+
+    private fun measureScaledText(text: String, scale: Float): Int =
+        (Minecraft.getInstance().font.width(text) * scale).roundToInt()
+
+    private fun drawDottedBox(
+        guiGraphics: GuiGraphics,
+        left: Int,
+        top: Int,
+        right: Int,
+        bottom: Int
+    ) {
+        for (dotX in left until right step 2) {
+            guiGraphics.fill(dotX, top, dotX + 1, top + 1, DISPLAY_HIGHLIGHT_COLOR)
+            guiGraphics.fill(dotX, bottom - 1, dotX + 1, bottom, DISPLAY_HIGHLIGHT_COLOR)
+        }
+        for (dotY in top + 1 until bottom - 1 step 2) {
+            guiGraphics.fill(left, dotY, left + 1, dotY + 1, DISPLAY_HIGHLIGHT_COLOR)
+            guiGraphics.fill(right - 1, dotY, right, dotY + 1, DISPLAY_HIGHLIGHT_COLOR)
+        }
     }
 
     private fun drawCompletedFraction(
@@ -765,56 +976,6 @@ class CalculatorRenderer(private val controller: CalculatorController) {
             .let { (it * FRACTION_TEXT_SCALE).roundToInt().coerceAtLeast(3) + 2 }
     }
 
-    private fun findDisplayFraction(text: String): DisplayFraction? {
-        val fractionStart = text.indexOf("frac(").takeIf { it >= 0 }
-        val mixedStart = text.indexOf("mixed(").takeIf { it >= 0 }
-        val start = listOfNotNull(fractionStart, mixedStart).minOrNull() ?: return null
-        val function = if (mixedStart == start) "mixed" else "frac"
-        val openIndex = start + function.length
-        var depth = 0
-        var closeIndex = -1
-        for (index in openIndex until text.length) {
-            when (text[index]) {
-                '(' -> depth++
-                ')' -> {
-                    depth--
-                    if (depth == 0) {
-                        closeIndex = index
-                        break
-                    }
-                }
-            }
-        }
-        if (closeIndex < 0) return null
-
-        val arguments = splitTopLevelArguments(text.substring(openIndex + 1, closeIndex))
-        return when {
-            function == "frac" && arguments.size == 2 ->
-                DisplayFraction(start, closeIndex + 1, null, arguments[0], arguments[1])
-            function == "mixed" && arguments.size == 3 ->
-                DisplayFraction(start, closeIndex + 1, arguments[0], arguments[1], arguments[2])
-            else -> null
-        }
-    }
-
-    private fun splitTopLevelArguments(arguments: String): List<String> {
-        val result = mutableListOf<String>()
-        var depth = 0
-        var start = 0
-        arguments.forEachIndexed { index, character ->
-            when (character) {
-                '(' -> depth++
-                ')' -> depth--
-                ',' -> if (depth == 0) {
-                    result += arguments.substring(start, index)
-                    start = index + 1
-                }
-            }
-        }
-        result += arguments.substring(start)
-        return result
-    }
-
     private fun mathResultText(result: String): String =
         if (RESULT_FRACTION_PATTERN.matches(result)) {
             val (numerator, denominator) = result.split('/', limit = 2)
@@ -835,16 +996,14 @@ class CalculatorRenderer(private val controller: CalculatorController) {
 
         val font = Minecraft.getInstance().font
         val cursorPosition = CalculatorDisplayMemory.cursorPosition()
-        val cursorLeft = left + measureMathExpression(text.substring(0, cursorPosition))
-        val tokenWidth = if (cursorPosition == text.length) font.width("0") else {
-            font.width(text[cursorPosition].toString())
-        }
-        val cursorWidth = maxOf(2, (tokenWidth * DISPLAY_TEXT_SCALE).toInt())
+        val cursorLeft = left + measureMathCursorPrefix(text.substring(0, cursorPosition))
+        val cursorBounds =
+            editorCursorBounds(text, cursorPosition, cursorLeft, font.width("0"))
         guiGraphics.fill(
-            cursorLeft,
-            lineY - 1,
-            cursorLeft + cursorWidth,
-            lineY + DISPLAY_LINE_HEIGHT - 1,
+            cursorBounds.left,
+            lineY + cursorBounds.topOffset,
+            cursorBounds.left + cursorBounds.width,
+            lineY + cursorBounds.bottomOffset,
             MODE_SELECTION_COLOR
         )
     }
@@ -855,13 +1014,14 @@ class CalculatorRenderer(private val controller: CalculatorController) {
 
         val font = Minecraft.getInstance().font
         val cursorPosition = YEqualsMemory.cursor(YEqualsMemory.selectedIndex)
-        val cursorLeft = left + measureMathExpression(text.substring(0, cursorPosition))
-        val tokenWidth = if (cursorPosition == text.length) font.width("0") else font.width(text[cursorPosition].toString())
+        val cursorLeft = left + measureMathCursorPrefix(text.substring(0, cursorPosition))
+        val cursorBounds =
+            editorCursorBounds(text, cursorPosition, cursorLeft, font.width("0"))
         guiGraphics.fill(
-            cursorLeft,
-            lineY - 1,
-            cursorLeft + maxOf(2, (tokenWidth * DISPLAY_TEXT_SCALE).toInt()),
-            lineY + DISPLAY_LINE_HEIGHT - 1,
+            cursorBounds.left,
+            lineY + cursorBounds.topOffset,
+            cursorBounds.left + cursorBounds.width,
+            lineY + cursorBounds.bottomOffset,
             DISPLAY_TEXT_COLOR
         )
     }
@@ -871,14 +1031,68 @@ class CalculatorRenderer(private val controller: CalculatorController) {
 
         val font = Minecraft.getInstance().font
         val cursorPosition = WindowSettingsMemory.cursor(WindowSettingsMemory.selectedIndex)
-        val cursorLeft = left + measureMathExpression(text.substring(0, cursorPosition))
-        val tokenWidth = if (cursorPosition == text.length) font.width("0") else font.width(text[cursorPosition].toString())
+        val cursorLeft = left + measureMathCursorPrefix(text.substring(0, cursorPosition))
+        val cursorBounds =
+            editorCursorBounds(text, cursorPosition, cursorLeft, font.width("0"))
         guiGraphics.fill(
-            cursorLeft,
-            lineY - 1,
-            cursorLeft + maxOf(2, (tokenWidth * DISPLAY_TEXT_SCALE).toInt()),
-            lineY + DISPLAY_LINE_HEIGHT - 1,
+            cursorBounds.left,
+            lineY + cursorBounds.topOffset,
+            cursorBounds.left + cursorBounds.width,
+            lineY + cursorBounds.bottomOffset,
             DISPLAY_TEXT_COLOR
+        )
+    }
+
+    /**
+     * A structured fraction is entered with Right rather than selected as one oversized glyph.
+     * Its leading cursor therefore sits just before the stacked symbol.
+     */
+    private fun editorCursorBounds(
+        text: String,
+        cursorPosition: Int,
+        measuredLeft: Int,
+        fallbackGlyphWidth: Int
+    ): EditorCursorBounds {
+        if (ExpressionEditingTokens.structuredFractionStartingAt(text, cursorPosition) != null) {
+            return EditorCursorBounds(
+                measuredLeft - 2,
+                2,
+                -1,
+                DISPLAY_LINE_HEIGHT - 1
+            )
+        }
+        val cursorText = text.getOrNull(cursorPosition)
+            ?.takeUnless { it == ',' || it == ')' }
+            ?.toString()
+            ?: "0"
+        when (MathDisplayTokens.cursorFieldAt(text, cursorPosition)) {
+            MathCursorField.COMBINATORIC_OPERAND -> {
+                val width =
+                    measureScaledText(cursorText, COMBINATORIC_OPERAND_SCALE).coerceAtLeast(1)
+                return EditorCursorBounds(
+                    measuredLeft,
+                    width,
+                    1,
+                    DISPLAY_LINE_HEIGHT - 1
+                )
+            }
+            MathCursorField.ROOT_INDEX -> {
+                val width = measureScaledText(cursorText, ROOT_INDEX_SCALE).coerceAtLeast(1)
+                return EditorCursorBounds(measuredLeft, width, -3, 1)
+            }
+            null -> Unit
+        }
+        val tokenWidth =
+            if (cursorPosition == text.length) {
+                fallbackGlyphWidth
+            } else {
+                Minecraft.getInstance().font.width(text[cursorPosition].toString())
+            }
+        return EditorCursorBounds(
+            measuredLeft,
+            maxOf(2, (tokenWidth * DISPLAY_TEXT_SCALE).toInt()),
+            -1,
+            DISPLAY_LINE_HEIGHT - 1
         )
     }
 

@@ -248,8 +248,9 @@ class CalculatorArchitectureTest {
     }
 
     @Test
-    fun deferredPhaseFourMenusRemainIsolatedFromTheApprovedTestMenu() {
-        assertIs<CalculatorCommand.Unsupported>(
+    fun approvedPhaseFourMenusUseExplicitTypedMappings() {
+        assertEquals(
+            CalculatorCommand.OpenCompactMenu(CompactMenuId.MATH),
             CalculatorKeyBindings.resolve(CalculatorKey.MATH, ModifierLayer.NORMAL)
         )
         assertEquals(

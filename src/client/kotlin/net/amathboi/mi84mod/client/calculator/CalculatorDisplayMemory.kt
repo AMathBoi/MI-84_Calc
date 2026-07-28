@@ -736,6 +736,8 @@ object CalculatorDisplayMemory {
     private const val MIXED_FRACTION_FUNCTION = "mixed"
     private const val LOG_BASE_FUNCTION = "logBASE"
     private const val NTH_ROOT_FUNCTION = "nthRoot"
+    private const val INDEXED_ROOT_FUNCTION = "root"
+    private const val CUBE_ROOT_FUNCTION = "cubeRoot"
     private const val PERMUTATION_FUNCTION = "nPr"
     private const val COMBINATION_FUNCTION = "nCr"
     private const val DEGREE_MARKER = '°'
@@ -757,6 +759,8 @@ object CalculatorDisplayMemory {
         MIXED_FRACTION_FUNCTION,
         LOG_BASE_FUNCTION,
         NTH_ROOT_FUNCTION,
+        INDEXED_ROOT_FUNCTION,
+        CUBE_ROOT_FUNCTION,
         "remainder",
         FRACTION_FUNCTION,
         SQUARE_ROOT,
@@ -1197,18 +1201,28 @@ object CalculatorDisplayMemory {
                 check(result.isFinite()) { "Function result is outside the supported range" }
                 return BigDecimal.valueOf(result)
             }
-            if (function == NTH_ROOT_FUNCTION) {
-                check(arguments.size == 2) { "nthRoot requires value and index" }
-                val value = arguments[0].toDouble()
-                val root = arguments[1].toDouble()
+            if (function == NTH_ROOT_FUNCTION || function == INDEXED_ROOT_FUNCTION) {
+                check(arguments.size == 2) { "$function requires an index and value" }
+                val valueArgument =
+                    if (function == INDEXED_ROOT_FUNCTION) arguments[1] else arguments[0]
+                val rootArgument =
+                    if (function == INDEXED_ROOT_FUNCTION) arguments[0] else arguments[1]
+                val value = valueArgument.toDouble()
+                val root = rootArgument.toDouble()
                 check(root != 0.0) { "nthRoot index cannot be zero" }
                 val result = if (value < 0.0) {
-                    val integerRoot = arguments[1].intValueExact()
+                    val integerRoot = rootArgument.intValueExact()
                     check(integerRoot % 2 != 0) { "Even root of a negative value is not real" }
                     -Math.pow(-value, 1.0 / integerRoot)
                 } else {
                     Math.pow(value, 1.0 / root)
                 }
+                check(result.isFinite()) { "Function result is outside the supported range" }
+                return BigDecimal.valueOf(normalizeCoordinateResult(result))
+            }
+            if (function == CUBE_ROOT_FUNCTION) {
+                check(arguments.size == 1) { "cubeRoot requires one argument" }
+                val result = Math.cbrt(arguments.single().toDouble())
                 check(result.isFinite()) { "Function result is outside the supported range" }
                 return BigDecimal.valueOf(normalizeCoordinateResult(result))
             }

@@ -39,7 +39,7 @@ object FunctionMenuDefinitions {
             FunctionMenuItem("4", "Σ(", FunctionMenuAction.Unavailable),
             FunctionMenuItem("5", "logBASE(", FunctionMenuAction.InsertToken("logBASE(")),
             FunctionMenuItem("6", "sqrt(", FunctionMenuAction.InsertToken("sqrt(")),
-            FunctionMenuItem("7", "nthRoot(", FunctionMenuAction.InsertToken("nthRoot(")),
+            FunctionMenuItem("7", "x√(", FunctionMenuAction.InsertToken("root(")),
             FunctionMenuItem("8", "nPr(", FunctionMenuAction.InsertToken("nPr(")),
             FunctionMenuItem("9", "nCr(", FunctionMenuAction.InsertToken("nCr(")),
             FunctionMenuItem("0", "!", FunctionMenuAction.InsertToken("!"))
@@ -113,12 +113,14 @@ class FractionTemplateState(
     val targetView: CalculatorView,
     initialValues: List<String>? = null,
     val replacementStart: Int? = null,
-    val originalToken: String? = null
+    val originalToken: String? = null,
+    reopenFromStart: Boolean = false
 ) {
     private val values =
         initialValues?.toMutableList() ?: MutableList(if (mixedNumber) 3 else 2) { "" }
     private val cursors = MutableList(values.size) { 0 }
-    var selectedFieldIndex = if (originalToken == null) 0 else values.lastIndex
+    var selectedFieldIndex =
+        if (originalToken == null || reopenFromStart) 0 else values.lastIndex
         private set
 
     init {
@@ -171,7 +173,8 @@ class FractionTemplateState(
         return true
     }
 
-    fun moveLeft() {
+    /** Returns true when movement passes the first field and the template should be exited. */
+    fun moveLeft(): Boolean {
         val cursor = cursors[selectedFieldIndex]
         if (cursor > 0) {
             cursors[selectedFieldIndex]--
@@ -179,7 +182,10 @@ class FractionTemplateState(
             selectedFieldIndex--
             cursors[selectedFieldIndex] =
                 (values[selectedFieldIndex].length - 1).coerceAtLeast(0)
+        } else {
+            return true
         }
+        return false
     }
 
     /** Returns true when movement passes the final field and the template should be committed. */
@@ -230,7 +236,8 @@ class FractionTemplateState(
         fun reopen(
             token: String,
             start: Int,
-            targetView: CalculatorView
+            targetView: CalculatorView,
+            fromStart: Boolean = false
         ): FractionTemplateState? {
             val fraction = ExpressionEditingTokens.parseStructuredFraction(token) ?: return null
             return FractionTemplateState(
@@ -238,7 +245,8 @@ class FractionTemplateState(
                 targetView,
                 fraction.fields,
                 start,
-                token
+                token,
+                fromStart
             )
         }
     }

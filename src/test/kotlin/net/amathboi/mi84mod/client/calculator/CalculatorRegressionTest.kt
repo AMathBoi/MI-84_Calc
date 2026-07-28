@@ -901,6 +901,187 @@ class CalculatorRegressionTest {
     }
 
     @Test
+    fun mathMenuExposesApprovedTabsTokensAndDeferredRows() {
+        val controller = CalculatorController()
+        CalculatorDisplayMemory.appendDigit('2')
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.MATH))
+
+        val menu = controller.state.compactMenu!!
+        assertEquals(listOf("MATH", "NUM", "CMPLX", "PROB", "FRAC"), menu.definition.tabs.map { it.label })
+        assertEquals(13, menu.selectedTab.items.size)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_1))
+        assertEquals(CalculatorView.COMPACT_MENU, controller.state.view)
+        assertFalse(menu.selectedItem.available)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_3))
+        assertEquals(CalculatorView.HOME, controller.state.view)
+        assertEquals("2^3", CalculatorDisplayMemory.current())
+        CalculatorDisplayMemory.submit()
+        assertEquals("8", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.MATH))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ALPHA))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.MATH))
+        assertEquals(CalculatorView.HOME, controller.state.view)
+        assertEquals("logBASE(", CalculatorDisplayMemory.current())
+    }
+
+    @Test
+    fun mathMenuCubeRootAndProbabilityRowsEvaluate() {
+        val controller = CalculatorController()
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.MATH))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_4))
+        enter("27")
+        CalculatorDisplayMemory.submit()
+        assertEquals("3", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.MATH))
+        repeat(3) { controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT)) }
+        assertEquals("PROB", controller.state.compactMenu!!.selectedTab.label)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_2))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_5))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.COMMA))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_2))
+        CalculatorDisplayMemory.submit()
+        assertEquals("20", CalculatorDisplayMemory.allSubmitted().last().result)
+    }
+
+    @Test
+    fun mathDisplayTokensRecognizeCompleteAndInProgressNotation() {
+        val squareRoot =
+            assertIs<MathDisplayToken.Root>(MathDisplayTokens.firstIn("2+sqrt(1+frac(1,2))"))
+        assertEquals(2, squareRoot.start)
+        assertEquals("1+frac(1,2)", squareRoot.radicand)
+        assertEquals(null, squareRoot.index)
+        assertTrue(squareRoot.complete)
+
+        val nthRoot =
+            assertIs<MathDisplayToken.Root>(MathDisplayTokens.firstIn("nthRoot(27,3"))
+        assertEquals("27", nthRoot.radicand)
+        assertEquals("3", nthRoot.index)
+        assertEquals(RootFieldOrder.RADICAND_THEN_INDEX, nthRoot.fieldOrder)
+        assertTrue(nthRoot.secondFieldEntered)
+        assertFalse(nthRoot.complete)
+
+        val indexedRoot =
+            assertIs<MathDisplayToken.Root>(MathDisplayTokens.firstIn("root(3,27"))
+        assertEquals("27", indexedRoot.radicand)
+        assertEquals("3", indexedRoot.index)
+        assertEquals(RootFieldOrder.INDEX_THEN_RADICAND, indexedRoot.fieldOrder)
+        assertTrue(indexedRoot.secondFieldEntered)
+
+        val permutation =
+            assertIs<MathDisplayToken.Combinatoric>(MathDisplayTokens.firstIn("nPr(10,2"))
+        assertEquals("10", permutation.leftOperand)
+        assertEquals('P', permutation.operator)
+        assertEquals("2", permutation.rightOperand)
+        assertTrue(permutation.rightOperandEntered)
+        assertFalse(permutation.complete)
+
+        val combination =
+            assertIs<MathDisplayToken.Combinatoric>(MathDisplayTokens.firstIn("4+nCr(8,3)"))
+        assertEquals(2, combination.start)
+        assertEquals('C', combination.operator)
+        assertTrue(combination.complete)
+    }
+
+    @Test
+    fun mathMenuNumAndFracRowsOpenTheSharedFractionEditor() {
+        val controller = CalculatorController()
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.MATH))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        assertEquals("NUM", controller.state.compactMenu!!.selectedTab.label)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ALPHA))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RECIPROCAL))
+        assertEquals(CalculatorView.HOME, controller.state.view)
+        assertFalse(controller.state.fractionTemplate!!.mixedNumber)
+
+        controller.state.fractionTemplate = null
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.MATH))
+        repeat(4) { controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT)) }
+        assertEquals("FRAC", controller.state.compactMenu!!.selectedTab.label)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_2))
+        assertTrue(controller.state.fractionTemplate!!.mixedNumber)
+    }
+
+    @Test
+    fun rightAdvancesIndexedRootAndCombinatoricFieldsThenExitsTheirNotation() {
+        val controller = CalculatorController()
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.MATH))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_5))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_3))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        assertEquals("root(3,", CalculatorDisplayMemory.current())
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_2))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_7))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        assertEquals("root(3,27)", CalculatorDisplayMemory.current())
+        CalculatorDisplayMemory.submit()
+        assertEquals("3", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.MATH))
+        repeat(3) { controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT)) }
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_2))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_5))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        assertEquals("nPr(5,", CalculatorDisplayMemory.current())
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_2))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ADD))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_1))
+        assertEquals("nPr(5,2)+1", CalculatorDisplayMemory.current())
+        CalculatorDisplayMemory.submit()
+        assertEquals("21", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.MATH))
+        repeat(3) { controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT)) }
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_3))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_5))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_2))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        assertEquals("nCr(5,2)", CalculatorDisplayMemory.current())
+    }
+
+    @Test
+    fun completedCombinatoricsTraverseBothOperandsWithoutHiddenCursorStops() {
+        listOf("nPr(12,3)", "nCr(12,3)").forEach { expression ->
+            CalculatorDisplayMemory.clearCurrent()
+            CalculatorDisplayMemory.appendMenuToken(expression)
+            val controller = CalculatorController()
+
+            controller.dispatch(CalculatorInputEvent(CalculatorKey.LEFT))
+            assertEquals(expression.lastIndex, CalculatorDisplayMemory.cursorPosition())
+            controller.dispatch(CalculatorInputEvent(CalculatorKey.LEFT))
+            assertEquals(expression.lastIndex - 1, CalculatorDisplayMemory.cursorPosition())
+            controller.dispatch(CalculatorInputEvent(CalculatorKey.LEFT))
+            assertEquals(expression.indexOf(','), CalculatorDisplayMemory.cursorPosition())
+            assertEquals(
+                MathCursorField.COMBINATORIC_OPERAND,
+                MathDisplayTokens.cursorFieldAt(
+                    expression,
+                    CalculatorDisplayMemory.cursorPosition()
+                )
+            )
+
+            controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+            assertEquals(expression.indexOf(',') + 1, CalculatorDisplayMemory.cursorPosition())
+            controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+            assertEquals(expression.lastIndex, CalculatorDisplayMemory.cursorPosition())
+            controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+            assertEquals(expression.length, CalculatorDisplayMemory.cursorPosition())
+            assertEquals(
+                null,
+                MathDisplayTokens.cursorFieldAt(
+                    expression,
+                    CalculatorDisplayMemory.cursorPosition()
+                )
+            )
+        }
+    }
+
+    @Test
     fun compactMenuDirectViewKeysCancelItAndNonEditorOriginsReturnHome() {
         val controller = CalculatorController()
         dispatchSecond(controller, CalculatorKey.MATH)
@@ -1135,6 +1316,48 @@ class CalculatorRegressionTest {
     }
 
     @Test
+    fun leftFromTheFirstNumeratorElementExitsBeforeTheCompletedFraction() {
+        val original = "frac(12,34)"
+        CalculatorDisplayMemory.appendMenuToken(original)
+        val controller = CalculatorController()
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.LEFT))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.LEFT))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.LEFT))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.LEFT))
+
+        assertEquals(null, controller.state.fractionTemplate)
+        assertEquals(original, CalculatorDisplayMemory.current())
+        assertEquals(0, CalculatorDisplayMemory.cursorPosition())
+    }
+
+    @Test
+    fun rightBeforeACompletedFractionReopensNumeratorFirstAndExitsAfterDenominator() {
+        val original = "frac(12,34)"
+        CalculatorDisplayMemory.appendMenuToken(original)
+        CalculatorDisplayMemory.moveCursorLeft()
+        val controller = CalculatorController()
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        val template = controller.state.fractionTemplate!!
+        assertEquals(0, template.selectedFieldIndex)
+        assertEquals(0, template.cursor(0))
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_9))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        assertEquals(1, template.selectedFieldIndex)
+        assertEquals(0, template.cursor(1))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_5))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+
+        assertEquals(null, controller.state.fractionTemplate)
+        assertEquals("frac(92,54)", CalculatorDisplayMemory.current())
+        assertEquals("frac(92,54)".length, CalculatorDisplayMemory.cursorPosition())
+    }
+
+    @Test
     fun recallingAFractionResultPreservesItsStructuredFractionBehavior() {
         submitRaw("frac(1,2)")
         val controller = CalculatorController()
@@ -1169,6 +1392,7 @@ class CalculatorRegressionTest {
             "abs(-5)" to "5",
             "logBASE(8,2)" to "3",
             "nthRoot(27,3)" to "3",
+            "root(3,27)" to "3",
             "nPr(5,2)" to "20",
             "nCr(5,2)" to "10",
             "5!" to "120"

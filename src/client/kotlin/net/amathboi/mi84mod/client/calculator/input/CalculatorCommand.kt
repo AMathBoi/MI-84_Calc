@@ -131,6 +131,7 @@ object CalculatorKeyBindings {
         CalculatorKey.TRACE -> CalculatorCommand.BeginTrace
         CalculatorKey.GRAPH -> CalculatorCommand.OpenView(CalculatorView.GRAPH)
         CalculatorKey.MODE -> CalculatorCommand.OpenView(CalculatorView.MODE)
+        CalculatorKey.MATH -> CalculatorCommand.OpenCompactMenu(CompactMenuId.MATH)
         CalculatorKey.DELETE -> CalculatorCommand.Delete
         CalculatorKey.DOWN -> CalculatorCommand.Down
         CalculatorKey.UP -> CalculatorCommand.Up
@@ -169,7 +170,6 @@ object CalculatorKeyBindings {
         CalculatorKey.ENTER -> CalculatorCommand.Enter
         CalculatorKey.SECOND, CalculatorKey.ALPHA -> error("Modifier keys are resolved before primary commands")
         CalculatorKey.STAT,
-        CalculatorKey.MATH,
         CalculatorKey.APPS,
         CalculatorKey.PROGRAM,
         CalculatorKey.VARS,

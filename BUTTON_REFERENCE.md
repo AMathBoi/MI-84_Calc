@@ -114,7 +114,7 @@ records the prerequisite subsystem and confirms the visual gate without repeatin
 ### Implemented nonvisual evaluator foundations
 
 Phase 3 added expression primitives before exposing their deferred menus. Phase 4 now provides the
-reviewed TEST/LOGIC and partial ANGLE entry paths; MATH and DISTR remain deferred.
+reviewed TEST/LOGIC, partial ANGLE, and partial MATH-family entry paths; DISTR remains deferred.
 
 - Arithmetic is evaluated before `=`, `≠`, `>`, `≥`, `<`, and `≤`. Relations are evaluated before
   `and`; `or` and `xor` share the next precedence level and evaluate left to right. A relation or
@@ -197,7 +197,8 @@ STAT opens a three-tab statistics menu.
 ### MATH
 
 MATH opens five tabs. Selecting a function normally pastes a token or template into the active
-expression. MathPrint templates remain deferred for visual review.
+expression. The longer MATH and NUM tabs use the shared nine-row scrolling viewport. Numeric
+hotkeys select `0`–`9`; displayed `A`–`D` rows use Alpha plus the corresponding physical key.
 
 #### MATH
 
@@ -259,6 +260,28 @@ D. fraction template
 2. mixed-number template
 3. fraction/decimal conversion
 4. improper/mixed-fraction conversion
+
+The implemented menu follows the approved availability review:
+
+- **MATH**: cube, cube root, nth root, and `logBASE(` are available. Conversion, function
+  minimization/maximization, numerical calculus, summation, piecewise, and Numeric Solver rows are
+  visible but unavailable. Square, cube, and nth roots display as radicals with a small gap before
+  the radicand and an overbar that grows with it. Their visual weight is slightly enlarged to match
+  a structured fraction. Only an empty indexed-root index has a dotted placeholder; the radicand
+  remains unboxed. Right advances from the index to the radicand and then exits the completed
+  notation.
+- **NUM**: the ten scalar helpers and both shared fraction templates are available. The two
+  conversion rows remain unavailable.
+- **CMPLX**: `abs(` is available. Complex component/angle and rectangular/polar conversion rows
+  remain unavailable until their owning evaluator/display behavior is approved.
+- **PROB**: `nPr(`, `nCr(`, and factorial are available. Permutations and combinations display
+  their two arguments as compact lowered operands around an enlarged `P` or `C`, matching the
+  fraction's visual weight. Only empty operands have dotted placeholders. The blinking cursor is
+  reduced and lowered within each operand; Left/Right cross the comma/closing delimiter as one
+  visual field transition, and Right exits after the completed second operand. Raw function names
+  remain internal. Random-number rows remain unavailable.
+- **FRAC**: the shared fraction and mixed-number templates are available. Conversion rows remain
+  unavailable.
 
 ### APPS
 
@@ -507,14 +530,15 @@ inventory and turning off the calculator are different operations.
 ### Direct 2nd entry functions
 
 The Phase 1 scalar entries—`Ans`, `i`, `π`, `e`, inverse trig, exponential functions, `sqrt(`, and
-`EE`—are implemented in Home, Y=, and Window. They use linear LCD tokens; the other rows retain the
-status recorded in `BUTTON_MATRIX.md`, and MathPrint templates remain separately deferred.
+`EE`—are implemented in Home, Y=, and Window. The evaluator retains linear internal tokens while
+approved roots use nonlinear LCD notation; the other rows retain the status recorded in
+`BUTTON_MATRIX.md`.
 
 | Physical key | 2nd result | Use |
 |---|---|---|
 | sin / cos / tan | `sin⁻¹(` / `cos⁻¹(` / `tan⁻¹(` | Inverse trig using Degree or Radian mode. Real-domain failures use principal complex values only in `a+bi` mode. |
 | ^ | `π` | Inserts the pi constant and supports implicit multiplication such as `2π`. |
-| x² | `sqrt(` | Inserts a linear principal square-root function; negative real inputs require `a+bi`. The MathPrint radical is deferred. |
+| x² | `sqrt(` | Inserts a principal square-root function displayed as an adaptive radical; negative real inputs require `a+bi`. |
 | comma | `EE` | Appends to a completed decimal mantissa, such as `1.2EE5`. `(−)` negates the exponent; malformed or excessively large exponents report an error. |
 | `(` / `)` | `{` / `}` | Opens/closes a list literal after list support exists. |
 | ÷ | `e` | Inserts Euler's constant and supports implicit multiplication. |
@@ -554,7 +578,11 @@ view. F3 MTRX and F4 YVAR remain visible tab placeholders until their later impl
   field for a mixed number). Inside each field, only the character under the forward cursor is
   inverted; it uses the standard half-second blink and is positioned from the scaled glyph metrics
   so repeated or wide digits remain centered. Left/Right, typing, and Delete operate on individual
-  elements. Recalling a fractional result from Home history restores the same
+  elements. Moving Left past the first numerator or whole-number element commits valid edits and
+  exits to a narrow cursor before the fraction; an incomplete edit restores the original token.
+  Moving Right from that position reopens the first numerator or whole-number field and traverses
+  the fraction element by element before exiting after the denominator.
+  Recalling a fractional result from Home history restores the same
   structured fraction instead of ordinary `/` division. A Home expression that uses a fraction
   template defaults to a reduced fraction result unless the same expression contains decimal input.
 - **F2 FUNC**: absolute value, arbitrary-base logarithm, square/nth root, permutations,

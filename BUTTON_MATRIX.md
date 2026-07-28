@@ -40,7 +40,7 @@ Y=, or Window depending on the active view.
 | Stat | STAT EDIT/CALC/TESTS menu | Deferred — subsystem and visual review | LIST NAMES/OPS/MATH menu | Deferred — subsystem and visual review | No shifted function | No shifted function |
 | Left | Move/select left | Complete | No shifted function | No shifted function | No shifted function | No shifted function |
 | Right | Move/select right | Complete | No shifted function | No shifted function | No shifted function | No shifted function |
-| Math | MATH/NUM/CMPLX/PROB/FRAC menu | Deferred — visual review | TEST/LOGIC/CONDITIONS menu | Partial: TEST/LOGIC complete; CONDITIONS visible but unavailable pending template review | Insert `A`; Zoom shortcut A in Zoom | Complete |
+| Math | MATH/NUM/CMPLX/PROB/FRAC menu | Partial: approved Phase 4 menu; supported scalar/template rows complete and dependent rows visibly unavailable | TEST/LOGIC/CONDITIONS menu | Partial: TEST/LOGIC complete; CONDITIONS visible but unavailable pending template review | Insert `A`; Zoom shortcut A in Zoom | Complete |
 | Apps | Installed-applications menu | Deferred — subsystem and visual review | ANGLE menu | Partial: degree/radian markers and coordinate conversions complete; minute and `►DMS` visibly unavailable | Insert `B`; Zoom shortcut B in Zoom | Complete |
 | Prgm | PRGM EXEC/EDIT/NEW menu | Deferred — subsystem and visual review | DRAW/POINTS/STO menu | Deferred — subsystem and visual review | Insert `C`; Zoom shortcut C in Zoom | Complete |
 | Vars | VARS/Y-VARS menu | Deferred — visual review | DISTR/DRAW menu | Deferred — subsystem and visual review | No shifted function | No shifted function |
@@ -86,7 +86,7 @@ Y=, or Window depending on the active view.
 | Mode | Four-way option/category navigation |
 | Zoom | Tabs, menu movement, physical numeric shortcuts, and physical Alpha A-G shortcuts |
 | Zoom Factors | Factor movement, selection, and physical numeric shortcuts 1-6 |
-| Compact token menu | Tabs, row navigation, physical numeric hotkeys, Enter selection, Clear cancellation, and direct-view exits |
+| Compact token menu | Tabs, row navigation, physical numeric and Alpha A-D hotkeys where displayed, Enter selection, Clear cancellation, and direct-view exits |
 | Graph | Trace movement or interactive zoom cursor movement |
 
 ## Placeholder policy
