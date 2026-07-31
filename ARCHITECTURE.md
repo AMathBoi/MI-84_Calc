@@ -47,8 +47,9 @@ CalculatorWidget / Minecraft GuiGraphics
 - `input/CalculatorKeyLayout.kt` defines texture-relative hitboxes only.
 - `input/CalculatorCommand.kt` maps physical keys and modifier layers to typed logical commands.
 - Primary commands are exhaustive. Phase 1 scalar 2nd meanings, Phase 2 ENTRY/INS and Alpha A-Z/θ,
-  plus the approved Phase 4 TEST, ANGLE, MATH-family, F1 FRAC, and F2 FUNC menus have explicit typed
-  commands; remaining unimplemented 2nd and Alpha meanings are explicit placeholders.
+  plus the approved Phase 4 TEST, ANGLE, MATH-family, VARS, F1 FRAC, F2 FUNC, and F4 YVAR menus
+  have explicit typed commands; remaining unimplemented 2nd and Alpha meanings are explicit
+  placeholders.
 
 Visible legends are not identifiers. Code should compare `CalculatorKey.SIN`, not `"sin"`, and
 should never infer behavior from displayed text.
@@ -57,17 +58,21 @@ should never infer behavior from displayed text.
 
 - `controller/CalculatorController.kt` is the single input-dispatch entry point.
 - `controller/CalculatorViewControllers.kt` contains Home, Y=, Window, and Mode input behavior.
+- `controller/ListEditorController.kt` owns four-way list-table navigation and the bottom real-number
+  cell-entry buffer; it does not render the table.
 - `controller/DispatchResult.kt` distinguishes handled input, unsupported primary keys, and planned
   modifier placeholders.
 - `ui/CalculatorUiState.kt` owns transient state: active view, modifier layer, history/ENTRY
   selection, insert/overwrite mode, persistent-session A-LOCK, compact-menu selection, function-menu
   overlay and fraction-template editing, trace state, and interactive zoom state.
-- `ui/CompactMenuState.kt` defines reusable non-Minecraft tab/item/menu models and approved compact
-  menu contents. Unavailable items have no action and cannot activate.
+- `ui/CompactMenuState.kt` defines reusable non-Minecraft tab/item/menu models, nested category
+  frames, and approved compact menu contents. Unavailable items have no action and cannot activate.
 - `ui/FunctionMenuState.kt` defines the separate bottom-tab F1–F4 overlay, editable origin target,
-  typed F1/F2 actions, and transient structured fraction fields.
-- `ExpressionEditingTokens.kt` recognizes completed `frac`/`mixed` storage forms as one cursor,
-  overwrite, and forward-delete token across Home, Y=, and Window.
+  typed F1/F2/F4 actions, two-column YVAR navigation, and transient structured fraction fields.
+- `ExpressionEditingTokens.kt` recognizes completed `frac`/`mixed` storage forms and named
+  Window/Zoom/Y-function references as one cursor, overwrite, and forward-delete token across
+  Home, Y=, and Window. It also owns shared operand-sign editing and keeps scalar `Y` followed by a
+  digit distinct from the typed subscripted `Y₁`–`Y₉` function-reference tokens.
 - `MathDisplayTokens.kt` recognizes complete and in-progress fraction, root, permutation, and
   combination evaluator tokens for nonlinear LCD presentation without changing stored expressions.
 
@@ -76,12 +81,20 @@ Persistent calculator content does not belong in `CalculatorUiState`.
 ### Rendering
 
 - `CalculatorRenderer` reads controller state and persistent stores to draw non-graph LCD views.
+- The STAT→Edit list table is a non-graph LCD view: renderer-owned L1–L6 headers, selected-cell
+  highlighting, next-empty `_` markers, and bottom entry-line presentation read only list memory
+  and transient list-editor state.
 - The renderer draws A-LOCK in the shared mode header and renders compact menus, bottom-tab function
   overlays, unavailable items, compact inline structured fractions, adaptive radicals, and
   subscripted permutation/combination notation without owning menu behavior. Empty indexed-root
   indices and empty combinatoric operands include dotted placeholders; controller routing advances
-  those fields, and cursor geometry follows their reduced/lowered text.
-- `CalculatorGraphRenderer` draws axes, functions, trace, and interactive zoom markers.
+  those fields, and cursor geometry follows their reduced/lowered text. The editable LCD rows reserve
+  top clearance for the three-pixel ascent of structured notation so it cannot overlap the mode header.
+  Home reclaims its unused lower LCD padding to retain three visible history entries, and history
+  selection backgrounds include each expression's full structured-symbol ascent.
+- `CalculatorGraphRenderer` draws axes, functions, trace, and interactive zoom markers. It asks
+  `GraphNavigationMath` whether adjacent samples are safe to connect; a real midpoint evaluation
+  rejects undefined and pole-like segments that would otherwise bridge an asymptote.
 - `CalculatorTextRenderer` supplies the shared half-scale Minecraft text primitive.
 - Rendering must not mutate calculator behavior or persistent data, except the established Home
   overflow operation that hides rows already outside the LCD.
@@ -94,10 +107,20 @@ Persistent calculator content does not belong in `CalculatorUiState`.
 - `CalculatorVariableMemory` owns persistent real/rectangular-complex A-Z/θ scalar values. All
   variables default to zero. Its X value mirrors the legacy `x` display-memory line for backward
   compatibility.
+- `CalculatorListMemory` owns persistent typed L1–L6 values. `CalculatorListOperations` provides
+  pure list transforms and summary primitives. It also owns ordered, uppercase user-named lists
+  created from the STAT→Edit header flow; their five-character names and placement persist with the
+  list data.
+- `CalculatorListExpressionEvaluator` owns real-list literals, named references, LIST OPS/MATH,
+  calculator-style sequences, persistent Fill, and correlated multi-list sorting. List cells reuse
+  the scalar evaluator and store raw precision; rendering alone applies the active display format.
 - `ComplexExpressionEvaluator` owns complex fallback evaluation.
 - The real and complex evaluators share the Phase 1 expression vocabulary: explicit `Ans`, `i`,
-  `π`, `e`, inverse trig, `10^(`, `e^(`, `sqrt(`, and `EE`. Complex inverse functions and square
-  root use principal values, while Degree/Radian mode controls inverse-trig output.
+  `π`, `e`, inverse trig, `10^(`, `e^(`, `sqrt(`, and `EE`. Common 30°/45°/90° families and their
+  radian equivalents use deterministic forward/inverse identities; tangent poles remain domain
+  errors. Complex inverse functions and square root use principal values, while Degree/Radian mode
+  controls inverse-trig output. Scientific exponents are capped at `-308..308`, and guarded
+  Double conversions report underflow/overflow instead of silently producing zero or infinity.
 - Phase 3 established evaluator-only relations, numeric Boolean logic, comma-separated function
   arguments, and approved MATH/NUM scalar helpers before any matching menu was exposed. Phase 4's
   approved MATH-family menu now exposes those helpers, cube/cube-root entry, shared fraction
@@ -122,6 +145,14 @@ Persistent calculator content does not belong in `CalculatorUiState`.
   avoid per-character rounding drift. At the token's leading edge the ordinary cursor is rendered
   as a narrow block before the stacked symbol; Right reopens the first field and traverses the
   fraction left-to-right.
+- Phase 4 VARS uses a nested compact-menu frame. Window exposes the implemented `X/Y` tab while
+  retaining deferred `T/θ` and `U/V/W` tabs; Zoom exposes `ZX/ZY` while retaining deferred
+  `ZT/Zθ` and `ZU` tabs. The available names expand from Window, saved Zoom, or Y= memory immediately
+  before real/complex evaluation, with recursive Y-function cycles rejected. F4 presents Y1–Y9 in
+  two columns and inserts distinct `Y₁`–`Y₉` tokens. Legacy persisted raw `Y1`–`Y9` references stay
+  compatible; ordinary scalar `Y` followed by a digit is edited as explicit multiplication.
+- Alpha `X,T,θ,n` bypasses the menu and starts the same structured `n/d` fraction editor directly,
+  retaining Home, Y=, or Window as its target and redirecting other origins to Home.
 - New indexed-root entry uses internal `root(index,value)` order so Right follows the visual
   index-to-radicand sequence; persisted `nthRoot(value,index)` expressions remain supported.
   Incomplete indexed roots and `nPr`/`nCr` advance to their second field with Right and add their
@@ -175,9 +206,12 @@ Automated tests should cover:
   unavailable rows, origin returns, direct-view exits, and no-fallthrough behavior;
 - whole-token Boolean cursor behavior plus angle-marker precedence, Angle Unit overrides,
   coordinate conversions, and disabled DMS rows;
-- F1/F2 overlay origins, bottom-tab navigation, unavailable F3/F4 and calculus rows, structured
-  fraction completion, context-sensitive Quit, exact-fraction preference, decimal override, and
-  FUNC scalar domains;
+- F1/F2/F4 overlay origins, bottom-tab and two-column YVAR navigation, unavailable F3 and calculus
+  rows, structured fraction completion, context-sensitive Quit, exact-fraction preference, decimal
+  override, and FUNC scalar domains;
+- scalar-Y/function-Y token disambiguation and operand-sign parity across Home, Y=, and Window;
+- exact common-angle forward/inverse trig identities, tangent poles, and guarded numeric ranges;
+- graph segments crossing undefined or pole-like midpoints;
 - modifier cancellation and one-shot consumption;
 - direct and view-specific state transitions;
 - evaluator, persistence, history, graph, trace, and zoom edge cases.

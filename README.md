@@ -16,13 +16,7 @@ Drag the calculator from its top. The default controls, active only while an inv
 
 All three bindings can be changed in Minecraft's Controls menu under **MI-84 Calculator**.
 
-Currently, the calculator includes all scientific functions, basic graphing features, and some more advanced features.
+Currently, the calculator includes core scientific functions, basic graphing, persistent scalar
+variables, structured fractions, reviewed Phase 4 menus, and several advanced numeric helpers.
 
 For a complete public status table covering every button and major feature area, see [Feature Status](FEATURE_STATUS.md).
-
-## Known issues
-
-- Some values that should evaluate to an exact number can contain small floating-point errors. For example, `sin(π)` may return a very small non-zero value instead of `0`.
-- In the Y= editor, setting an equation to `Y=Ans` fails silently.
-- In the Y= editor, entries made with the `2nd` modifier do not insert anything.
-- The `2nd`-layer Insert function does not visually indicate insert mode. The cursor should continue blinking as an underscore over the character at the insertion point (for example, over `9`: `9` → `_` → `9`).

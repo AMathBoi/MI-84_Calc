@@ -89,6 +89,10 @@ object WindowSettingsMemory {
             cursors[selectedIndex] =
                 ExpressionEditingTokens.structuredFractionEndingAt(values[selectedIndex], cursor)
                     ?.let { cursor - it.length }
+                    ?: ExpressionEditingTokens.namedVariableEndingAt(
+                        values[selectedIndex],
+                        cursor
+                    )?.let { cursor - it.length }
                     ?: cursor - 1
         }
     }
@@ -100,6 +104,8 @@ object WindowSettingsMemory {
             cursors[selectedIndex] =
                 ExpressionEditingTokens.structuredFractionStartingAt(value, cursor)
                     ?.let { cursor + it.length }
+                    ?: ExpressionEditingTokens.namedVariableStartingAt(value, cursor)
+                        ?.let { cursor + it.length }
                     ?: cursor + 1
         }
     }
@@ -109,7 +115,9 @@ object WindowSettingsMemory {
         val value = values[selectedIndex]
         val cursor = cursors[selectedIndex]
         val replacedLength = if (!insertMode && cursor < value.length) {
-            ExpressionEditingTokens.structuredFractionStartingAt(value, cursor)?.length ?: 1
+            ExpressionEditingTokens.structuredFractionStartingAt(value, cursor)?.length
+                ?: ExpressionEditingTokens.namedVariableStartingAt(value, cursor)?.length
+                ?: 1
         } else {
             0
         }
@@ -118,6 +126,30 @@ object WindowSettingsMemory {
         values[selectedIndex] = value.removeRange(cursor, cursor + replacedLength)
             .substring(0, cursor) + text + value.substring(cursor + replacedLength)
         cursors[selectedIndex] += text.length
+        save()
+    }
+
+    fun appendDigit(digit: Char, insertMode: Boolean = false) {
+        require(digit.isDigit())
+        append(
+            ExpressionEditingTokens.digitEntryText(
+                values[selectedIndex],
+                cursors[selectedIndex],
+                digit
+            ),
+            insertMode
+        )
+    }
+
+    fun toggleCurrentOperandSign() {
+        val edit =
+            ExpressionEditingTokens.toggleOperandSign(
+                values[selectedIndex],
+                cursors[selectedIndex],
+                MAX_VALUE_LENGTH
+            ) ?: return
+        values[selectedIndex] = edit.text
+        cursors[selectedIndex] = edit.cursor
         save()
     }
 
@@ -142,7 +174,9 @@ object WindowSettingsMemory {
         val cursor = cursors[selectedIndex]
         if (cursor < value.length) {
             val length =
-                ExpressionEditingTokens.structuredFractionStartingAt(value, cursor)?.length ?: 1
+                ExpressionEditingTokens.structuredFractionStartingAt(value, cursor)?.length
+                    ?: ExpressionEditingTokens.namedVariableStartingAt(value, cursor)?.length
+                    ?: 1
             values[selectedIndex] = value.removeRange(cursor, cursor + length)
             save()
         }

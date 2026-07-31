@@ -2,7 +2,6 @@ package net.amathboi.mi84mod.client.calculator
 
 import java.math.BigDecimal
 import java.math.RoundingMode
-import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
@@ -230,10 +229,20 @@ class CalculatorGraphRenderer(private val controller: CalculatorController) {
             val graphX =
                 graphWindow.xMin + column.toDouble() / plotWidth * (graphWindow.xMax - graphWindow.xMin)
             val graphY = CalculatorDisplayMemory.evaluateForGraph(expression, graphX)
-            val current = graphY?.let { GraphSample(left + column, it) }
+            val current = graphY?.let { GraphSample(left + column, graphX, it) }
             if (current != null) {
                 previous?.let { prior ->
-                    if (abs(current.y - prior.y) <= (graphWindow.yMax - graphWindow.yMin) * 2.0) {
+                    if (GraphNavigationMath.shouldConnectSamples(
+                            prior.x,
+                            prior.y,
+                            current.x,
+                            current.y,
+                            graphWindow.yMin,
+                            graphWindow.yMax
+                        ) { midpointX ->
+                            CalculatorDisplayMemory.evaluateForGraph(expression, midpointX)
+                        }
+                    ) {
                         drawGraphSegment(guiGraphics, prior, current, color, top, bottom, graphWindow)
                     }
                 }
@@ -291,7 +300,7 @@ class CalculatorGraphRenderer(private val controller: CalculatorController) {
         }
     }
 
-    private data class GraphSample(val pixelX: Int, val y: Double)
+    private data class GraphSample(val pixelX: Int, val x: Double, val y: Double)
 
     companion object {
         private const val TEXTURE_WIDTH = 440

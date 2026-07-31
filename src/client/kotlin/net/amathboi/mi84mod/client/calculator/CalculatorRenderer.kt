@@ -4,6 +4,7 @@ import kotlin.math.max
 import kotlin.math.PI
 import kotlin.math.roundToInt
 import net.amathboi.mi84mod.client.calculator.controller.CalculatorController
+import net.amathboi.mi84mod.client.calculator.controller.ListEditorController
 import net.amathboi.mi84mod.client.calculator.input.ModifierLayer
 import net.amathboi.mi84mod.client.calculator.ui.CalculatorView
 import net.amathboi.mi84mod.client.calculator.ui.FractionTemplateState
@@ -24,6 +25,24 @@ class CalculatorRenderer(private val controller: CalculatorController) {
         private const val DISPLAY_RIGHT = 418
         private const val DISPLAY_BOTTOM = 343
         private const val DISPLAY_PADDING = 8
+        // Fractions and indexed roots extend three logical pixels above their text baseline.
+        // Reserve one additional source-texture pixel at the normal 0.25 render scale so the
+        // first display row remains below the gray mode strip.
+        private const val STRUCTURED_SYMBOL_TOP_INSET = 4
+        private val Y_FUNCTION_TOKEN_PATTERN = Regex("Y([0-9])")
+        private val Y_FUNCTION_SUBSCRIPTS =
+            mapOf(
+                "0" to "₀",
+                "1" to "₁",
+                "2" to "₂",
+                "3" to "₃",
+                "4" to "₄",
+                "5" to "₅",
+                "6" to "₆",
+                "7" to "₇",
+                "8" to "₈",
+                "9" to "₉"
+            )
         // Gray mode-indicator strip in source-texture pixels.
         private const val MODE_INDICATOR_LEFT = 21
         private const val MODE_INDICATOR_TOP = 49
@@ -91,11 +110,99 @@ class CalculatorRenderer(private val controller: CalculatorController) {
             CalculatorView.ZOOM -> renderZoomDisplay(guiGraphics)
             CalculatorView.ZOOM_FACTORS -> renderZoomFactorsDisplay(guiGraphics)
             CalculatorView.COMPACT_MENU -> renderCompactMenuDisplay(guiGraphics)
+            CalculatorView.LIST_EDITOR -> renderListEditorDisplay(guiGraphics)
             CalculatorView.GRAPH -> graphRenderer.render(guiGraphics, x, y, width, height)
         }
         state.functionMenu?.let { renderFunctionMenuOverlay(guiGraphics) }
         state.fractionTemplate?.let { renderFractionTemplateEditor(guiGraphics, it) }
     }
+
+    /** Approved TI-84-style STAT→Edit table for the built-in lists. */
+    private fun renderListEditorDisplay(guiGraphics: GuiGraphics) {
+        val editor = state.listEditor ?: return
+        val scaleX = width.toFloat() / TEXTURE_WIDTH
+        val scaleY = height.toFloat() / TEXTURE_HEIGHT
+        val left = (x + (DISPLAY_LEFT + DISPLAY_PADDING) * scaleX).toInt()
+        val right = (x + (DISPLAY_RIGHT - DISPLAY_PADDING) * scaleX).toInt()
+        val top = editorDisplayTop(scaleY)
+        val bottom = (y + (DISPLAY_BOTTOM - DISPLAY_PADDING) * scaleY).toInt()
+        val columnWidth = (right - left) / 3
+        val headerY = top
+        val tableTop = headerY + DISPLAY_LINE_HEIGHT + 2
+        val entryY = bottom - DISPLAY_LINE_HEIGHT
+        // Separate the first row's glyphs from the gray header divider without changing the
+        // approved header layout itself.
+        val tableRowsTop = tableTop + 2
+        // Reserve a complete row-height above the input divider: a highlighted bottom table cell
+        // must never overlap the `Ln(row)=` entry area.
+        val visibleRows = ((entryY - DISPLAY_LINE_HEIGHT - tableRowsTop) / DISPLAY_LINE_HEIGHT)
+            .coerceAtLeast(1)
+
+        (0 until 3).forEach { column ->
+            val listIndex = editor.firstVisibleListIndex + column
+            val name = ListEditorController.names(editor).getOrNull(listIndex) ?: return@forEach
+            val columnLeft = left + column * columnWidth
+            val header = if (editor.creatingNamedList && name == "_") {
+                if (editor.pendingListName.isEmpty()) "_" else editor.pendingListName
+            } else name
+            if (listIndex == editor.selectedListIndex) {
+                guiGraphics.fill(columnLeft, headerY - 1, columnLeft + columnWidth - 2, headerY + DISPLAY_LINE_HEIGHT, MODE_SELECTION_COLOR)
+                drawDisplayText(guiGraphics, header, columnLeft + 2, headerY, DISPLAY_INVERTED_TEXT_COLOR)
+            } else {
+                drawDisplayText(guiGraphics, header, columnLeft + 2, headerY)
+            }
+        }
+        guiGraphics.fill(left, tableTop - 1, right, tableTop, DISPLAY_DIVIDER_COLOR)
+        (1 until 3).forEach { column ->
+            val dividerX = left + column * columnWidth - 1
+            guiGraphics.fill(dividerX, tableTop, dividerX + 1, entryY - 2, DISPLAY_DIVIDER_COLOR)
+        }
+
+        (0 until visibleRows).forEach { visibleRow ->
+            val row = editor.firstVisibleRowIndex + visibleRow
+            val lineY = tableRowsTop + visibleRow * DISPLAY_LINE_HEIGHT
+            (0 until 3).forEach { column ->
+                val listIndex = editor.firstVisibleListIndex + column
+                val name = ListEditorController.names(editor).getOrNull(listIndex) ?: return@forEach
+                val columnLeft = left + column * columnWidth
+                val value = ListEditorController.valueAt(name, row)
+                val text = when {
+                    value != null -> listCellText(value)
+                    row == (CalculatorListMemory.value(name)?.dimension ?: -1) -> "_"
+                    else -> ""
+                }
+                if (!ListEditorController.editingHeader(editor) &&
+                    listIndex == editor.selectedListIndex && row == editor.selectedRowIndex
+                ) {
+                    guiGraphics.fill(columnLeft, lineY - 1, columnLeft + columnWidth - 2, lineY + DISPLAY_LINE_HEIGHT, DISPLAY_HIGHLIGHT_COLOR)
+                }
+                drawDisplayText(guiGraphics, text, columnLeft + 2, lineY)
+            }
+        }
+        guiGraphics.fill(left, entryY - 2, right, entryY - 1, DISPLAY_DIVIDER_COLOR)
+        val entryPrefix = if (ListEditorController.editingHeader(editor)) {
+            "${ListEditorController.selectedName(editor)}="
+        } else {
+            "${ListEditorController.selectedName(editor)}(${editor.selectedRowNumber()})="
+        }
+        val entryText = entryPrefix + editor.entry
+        drawDisplayText(guiGraphics, entryText, left, entryY)
+        if ((!ListEditorController.editingHeader(editor) || editor.headerEntryLocked) &&
+            (System.currentTimeMillis() / 500L) % 2L == 0L
+        ) {
+            val cursorText = entryPrefix + if (editor.headerEntryLocked) {
+                editor.entry.take(editor.entryCursor)
+            } else {
+                editor.entry
+            }
+            val cursorLeft = left + measureDisplayText(cursorText)
+            guiGraphics.fill(cursorLeft, entryY, cursorLeft + 1, entryY + DISPLAY_LINE_HEIGHT - 1, DISPLAY_TEXT_COLOR)
+        }
+    }
+
+    private fun listCellText(value: CalculatorScalarValue): String =
+        if (value.imaginary == null) ModeSettingsMemory.formatNumber(value.real)
+        else "${ModeSettingsMemory.formatNumber(value.real)}+${ModeSettingsMemory.formatNumber(value.imaginary)}i"
 
     /** Shows the five most useful active Mode values in the gray strip above every LCD view. */
     private fun renderModeIndicator(guiGraphics: GuiGraphics) {
@@ -125,8 +232,10 @@ class CalculatorRenderer(private val controller: CalculatorController) {
         val scaleY = height.toFloat() / TEXTURE_HEIGHT
         val left = (x + (DISPLAY_LEFT + DISPLAY_PADDING) * scaleX).toInt()
         val right = (x + (DISPLAY_RIGHT - DISPLAY_PADDING) * scaleX).toInt()
-        val top = (y + (DISPLAY_TOP + DISPLAY_PADDING) * scaleY).toInt()
-        val bottom = (y + (DISPLAY_BOTTOM - DISPLAY_PADDING) * scaleY).toInt()
+        val top = editorDisplayTop(scaleY)
+        // Home uses the otherwise unused bottom LCD padding so three complete history entries and
+        // the active entry still fit after reserving room above for structured notation.
+        val bottom = (y + DISPLAY_BOTTOM * scaleY).toInt()
 
         var lineY = top
         val selectedLine =
@@ -156,12 +265,12 @@ class CalculatorRenderer(private val controller: CalculatorController) {
         submitted.forEachIndexed { visibleIndex, entry ->
             val entryIndex = firstEntryIndex + visibleIndex
             if (selectedLine?.entryIndex == entryIndex && !selectedLine.isResult) {
-                guiGraphics.fill(left, lineY, right, lineY + DISPLAY_LINE_HEIGHT, DISPLAY_HIGHLIGHT_COLOR)
+                renderHistoryHighlight(guiGraphics, entry.input, left, right, lineY)
             }
             drawMathExpression(guiGraphics, entry.input, left, lineY)
             lineY += DISPLAY_LINE_HEIGHT
             if (selectedLine?.entryIndex == entryIndex && selectedLine.isResult) {
-                guiGraphics.fill(left, lineY, right, lineY + DISPLAY_LINE_HEIGHT, DISPLAY_HIGHLIGHT_COLOR)
+                renderHistoryHighlight(guiGraphics, mathResultText(entry.result), left, right, lineY)
             }
             val resultText = mathResultText(entry.result)
             drawMathExpression(
@@ -202,7 +311,7 @@ class CalculatorRenderer(private val controller: CalculatorController) {
         val scaleY = height.toFloat() / TEXTURE_HEIGHT
         val left = (x + (DISPLAY_LEFT + DISPLAY_PADDING) * scaleX).toInt()
         val right = (x + (DISPLAY_RIGHT - DISPLAY_PADDING) * scaleX).toInt()
-        val top = (y + (DISPLAY_TOP + DISPLAY_PADDING) * scaleY).toInt()
+        val top = editorDisplayTop(scaleY)
         val font = Minecraft.getInstance().font
 
         repeat(Y_EQUALS_VISIBLE_ROWS) { visibleRow ->
@@ -246,7 +355,7 @@ class CalculatorRenderer(private val controller: CalculatorController) {
         val scaleX = width.toFloat() / TEXTURE_WIDTH
         val scaleY = height.toFloat() / TEXTURE_HEIGHT
         val left = (x + (DISPLAY_LEFT + DISPLAY_PADDING) * scaleX).toInt()
-        val top = (y + (DISPLAY_TOP + DISPLAY_PADDING) * scaleY).toInt()
+        val top = editorDisplayTop(scaleY)
         val font = Minecraft.getInstance().font
 
         drawDisplayText(guiGraphics, "WINDOW", left, top)
@@ -447,7 +556,7 @@ class CalculatorRenderer(private val controller: CalculatorController) {
         // their inverted box instead of clipping its top and left padding.
         guiGraphics.enableScissor(clipLeft, clipTop, right, bottom)
         var tabLeft = left
-        menu.definition.tabs.forEachIndexed { index, tab ->
+        menu.currentDefinition.tabs.forEachIndexed { index, tab ->
             drawZoomTab(guiGraphics, tab.label, tabLeft, top, menu.selectedTabIndex == index)
             tabLeft += (font.width("${tab.label}   ") * DISPLAY_TEXT_SCALE).toInt()
         }
@@ -490,8 +599,10 @@ class CalculatorRenderer(private val controller: CalculatorController) {
         val bottom = zoomDisplayBottom()
         val tabLineY = bottom - DISPLAY_LINE_HEIGHT
         val menuBottom = tabLineY - 1
+        val displayedRows =
+            if (menu.selectedTab == FunctionMenuTab.YVAR) 5 else menu.items.size
         val menuTop =
-            (menuBottom - menu.items.size * FUNCTION_MENU_LINE_HEIGHT - 2).coerceAtLeast(top)
+            (menuBottom - displayedRows * FUNCTION_MENU_LINE_HEIGHT - 2).coerceAtLeast(top)
 
         guiGraphics.fill(left, menuTop, right, menuBottom, DISPLAY_MENU_BACKGROUND_COLOR)
         guiGraphics.fill(left, menuTop, right, menuTop + 1, MODE_SELECTION_COLOR)
@@ -503,19 +614,24 @@ class CalculatorRenderer(private val controller: CalculatorController) {
             val suffix = if (item.available) "" else " [deferred]"
             val hotkey = item.hotkey.takeIf(String::isNotEmpty)?.let { "$it: " }.orEmpty()
             val rowText = "$hotkey${item.label}$suffix"
-            val lineY = menuTop + 1 + index * FUNCTION_MENU_LINE_HEIGHT
+            val twoColumnYVar = menu.selectedTab == FunctionMenuTab.YVAR
+            val column = if (twoColumnYVar && index >= 5) 1 else 0
+            val row = if (twoColumnYVar) index % 5 else index
+            val columnLeft = if (column == 0) left else (left + right) / 2
+            val columnRight = if (column == 0 && twoColumnYVar) (left + right) / 2 else right
+            val lineY = menuTop + 1 + row * FUNCTION_MENU_LINE_HEIGHT
             if (index == menu.selectedItemIndex) {
                 guiGraphics.fill(
-                    left + 1,
+                    columnLeft + 1,
                     lineY,
-                    right - 1,
+                    columnRight - 1,
                     (lineY + FUNCTION_MENU_LINE_HEIGHT).coerceAtMost(menuBottom - 1),
                     MODE_SELECTION_COLOR
                 )
                 drawDisplayText(
                     guiGraphics,
                     rowText,
-                    left + 2,
+                    columnLeft + 2,
                     lineY,
                     if (item.available) DISPLAY_INVERTED_TEXT_COLOR else DISPLAY_HIGHLIGHT_COLOR
                 )
@@ -523,7 +639,7 @@ class CalculatorRenderer(private val controller: CalculatorController) {
                 drawDisplayText(
                     guiGraphics,
                     rowText,
-                    left + 2,
+                    columnLeft + 2,
                     lineY,
                     if (item.available) DISPLAY_TEXT_COLOR else DISPLAY_HIGHLIGHT_COLOR
                 )
@@ -676,16 +792,20 @@ class CalculatorRenderer(private val controller: CalculatorController) {
         left: Int,
         lineY: Int
     ): Int {
+        val displayText = listReferenceDisplayText(text)
+        if (displayText != text) return drawMathExpression(guiGraphics, displayText, left, lineY)
         val token = MathDisplayTokens.firstIn(text)
         if (token == null) {
-            drawDisplayText(guiGraphics, text, left, lineY)
-            return measureDisplayText(text)
+            val displayText = formatFunctionVariables(text)
+            drawDisplayText(guiGraphics, displayText, left, lineY)
+            return measureDisplayText(displayText)
         }
 
         var drawLeft = left
         val prefix = text.substring(0, token.start)
-        drawDisplayText(guiGraphics, prefix, drawLeft, lineY)
-        drawLeft += measureDisplayText(prefix)
+        val displayPrefix = formatFunctionVariables(prefix)
+        drawDisplayText(guiGraphics, displayPrefix, drawLeft, lineY)
+        drawLeft += measureDisplayText(displayPrefix)
 
         drawLeft += when (token) {
             is MathDisplayToken.Fraction -> {
@@ -717,16 +837,53 @@ class CalculatorRenderer(private val controller: CalculatorController) {
     }
 
     private fun measureMathExpression(text: String): Int {
-        val token = MathDisplayTokens.firstIn(text) ?: return measureDisplayText(text)
-        return measureDisplayText(text.substring(0, token.start)) +
+        val displayText = listReferenceDisplayText(text)
+        if (displayText != text) return measureMathExpression(displayText)
+        val token =
+            MathDisplayTokens.firstIn(text)
+                ?: return measureDisplayText(formatFunctionVariables(text))
+        return measureDisplayText(formatFunctionVariables(text.substring(0, token.start))) +
             measureMathToken(token) +
             measureMathExpression(text.substring(token.endExclusive))
     }
 
+    /** Returns the highest ascent used by any nonlinear token in an expression. */
+    private fun mathExpressionTopOffset(text: String): Int {
+        val token = MathDisplayTokens.firstIn(text) ?: return 0
+        val tokenTopOffset = when (token) {
+            is MathDisplayToken.Fraction,
+            is MathDisplayToken.Root -> -3
+            is MathDisplayToken.Combinatoric -> -1
+        }
+        return minOf(tokenTopOffset, mathExpressionTopOffset(text.substring(token.endExclusive)))
+    }
+
+    /** Highlights the full visual height of a selected history expression, not just its baseline. */
+    private fun renderHistoryHighlight(
+        guiGraphics: GuiGraphics,
+        expression: String,
+        left: Int,
+        right: Int,
+        lineY: Int
+    ) {
+        guiGraphics.fill(
+            left,
+            lineY + mathExpressionTopOffset(expression),
+            right,
+            lineY + DISPLAY_LINE_HEIGHT,
+            DISPLAY_HIGHLIGHT_COLOR
+        )
+    }
+
     /** Maps a raw editor prefix to the matching position inside nonlinear notation. */
     private fun measureMathCursorPrefix(text: String): Int {
-        val token = MathDisplayTokens.firstIn(text) ?: return measureDisplayText(text)
-        val prefixWidth = measureDisplayText(text.substring(0, token.start))
+        val displayText = listReferenceDisplayText(text)
+        if (displayText != text) return measureMathCursorPrefix(displayText)
+        val token =
+            MathDisplayTokens.firstIn(text)
+                ?: return measureDisplayText(formatFunctionVariables(text))
+        val prefixWidth =
+            measureDisplayText(formatFunctionVariables(text.substring(0, token.start)))
         val tokenWidth = when (token) {
             is MathDisplayToken.Combinatoric ->
                 if (!token.complete && !token.rightOperandEntered) {
@@ -747,6 +904,11 @@ class CalculatorRenderer(private val controller: CalculatorController) {
         return prefixWidth + tokenWidth +
             measureMathCursorPrefix(text.substring(token.endExclusive))
     }
+
+    private fun formatFunctionVariables(text: String): String =
+        Y_FUNCTION_TOKEN_PATTERN.replace(text) { match ->
+            "Y${Y_FUNCTION_SUBSCRIPTS.getValue(match.groupValues[1])}"
+        }
 
     private fun measureMathToken(token: MathDisplayToken): Int = when (token) {
         is MathDisplayToken.Fraction ->
@@ -984,13 +1146,21 @@ class CalculatorRenderer(private val controller: CalculatorController) {
             result
         }
 
+    /** Raw `@NAME` list references render with a readable L prefix beside their list name. */
+    private fun listReferenceDisplayText(text: String): String =
+        text.replace(Regex("@([A-Z]{1,5})"), "L$1")
+
     private fun measureDisplayText(text: String): Int =
         (Minecraft.getInstance().font.width(text) * DISPLAY_TEXT_SCALE).toInt()
+
+    /** Keeps tall fraction, root, and combinatoric notation out of the mode-indicator strip. */
+    private fun editorDisplayTop(scaleY: Float): Int =
+        (y + (DISPLAY_TOP + DISPLAY_PADDING + STRUCTURED_SYMBOL_TOP_INSET) * scaleY).toInt()
 
     fun graphDisplayAspect(width: Int, height: Int): Double =
         graphRenderer.displayAspect(width, height)
 
-    /** Draws a blinking block cursor over the next editable token, or after the final token. */
+    /** Draws the blinking forward-edit cursor over the next token, or after the final token. */
     private fun renderCursor(guiGraphics: GuiGraphics, text: String, left: Int, lineY: Int) {
         if ((System.currentTimeMillis() / 500L) % 2L != 0L) return
 
@@ -999,13 +1169,7 @@ class CalculatorRenderer(private val controller: CalculatorController) {
         val cursorLeft = left + measureMathCursorPrefix(text.substring(0, cursorPosition))
         val cursorBounds =
             editorCursorBounds(text, cursorPosition, cursorLeft, font.width("0"))
-        guiGraphics.fill(
-            cursorBounds.left,
-            lineY + cursorBounds.topOffset,
-            cursorBounds.left + cursorBounds.width,
-            lineY + cursorBounds.bottomOffset,
-            MODE_SELECTION_COLOR
-        )
+        renderEditorCursor(guiGraphics, cursorBounds, lineY, MODE_SELECTION_COLOR)
     }
 
     /** Draws the forward-edit cursor for the selected Y= expression. */
@@ -1017,13 +1181,7 @@ class CalculatorRenderer(private val controller: CalculatorController) {
         val cursorLeft = left + measureMathCursorPrefix(text.substring(0, cursorPosition))
         val cursorBounds =
             editorCursorBounds(text, cursorPosition, cursorLeft, font.width("0"))
-        guiGraphics.fill(
-            cursorBounds.left,
-            lineY + cursorBounds.topOffset,
-            cursorBounds.left + cursorBounds.width,
-            lineY + cursorBounds.bottomOffset,
-            DISPLAY_TEXT_COLOR
-        )
+        renderEditorCursor(guiGraphics, cursorBounds, lineY, DISPLAY_TEXT_COLOR)
     }
 
     private fun renderWindowCursor(guiGraphics: GuiGraphics, text: String, left: Int, lineY: Int) {
@@ -1034,12 +1192,26 @@ class CalculatorRenderer(private val controller: CalculatorController) {
         val cursorLeft = left + measureMathCursorPrefix(text.substring(0, cursorPosition))
         val cursorBounds =
             editorCursorBounds(text, cursorPosition, cursorLeft, font.width("0"))
+        renderEditorCursor(guiGraphics, cursorBounds, lineY, DISPLAY_TEXT_COLOR)
+    }
+
+    /** Insert mode keeps the character visible and marks its insertion point with an underscore. */
+    private fun renderEditorCursor(
+        guiGraphics: GuiGraphics,
+        cursorBounds: EditorCursorBounds,
+        lineY: Int,
+        color: Int
+    ) {
+        val top =
+            if (state.insertMode) lineY + cursorBounds.bottomOffset - 1
+            else lineY + cursorBounds.topOffset
+        val bottom = if (state.insertMode) top + 1 else lineY + cursorBounds.bottomOffset
         guiGraphics.fill(
             cursorBounds.left,
-            lineY + cursorBounds.topOffset,
+            top,
             cursorBounds.left + cursorBounds.width,
-            lineY + cursorBounds.bottomOffset,
-            DISPLAY_TEXT_COLOR
+            bottom,
+            color
         )
     }
 

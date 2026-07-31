@@ -31,6 +31,7 @@ import net.amathboi.mi84mod.client.calculator.ui.FunctionMenuAction
 import net.amathboi.mi84mod.client.calculator.ui.FunctionMenuState
 import net.amathboi.mi84mod.client.calculator.ui.FunctionMenuTab
 import net.amathboi.mi84mod.client.calculator.ui.GraphWindow
+import net.amathboi.mi84mod.client.calculator.ui.ListEditorState
 import net.amathboi.mi84mod.client.calculator.ui.TraceState
 import net.amathboi.mi84mod.client.calculator.ui.ZoomGraphOperation
 import net.amathboi.mi84mod.client.calculator.ui.ZoomGraphState
@@ -124,6 +125,10 @@ class CalculatorController(
                 openFunctionMenu(command.tab)
                 return DispatchResult.Handled
             }
+            CalculatorCommand.BeginFractionTemplate -> {
+                openDirectFractionTemplate()
+                return DispatchResult.Handled
+            }
             CalculatorCommand.QuitToHome -> {
                 if (state.functionMenu != null) {
                     closeFunctionMenu()
@@ -137,7 +142,31 @@ class CalculatorController(
                 return DispatchResult.Handled
             }
             CalculatorCommand.ToggleInsertMode -> {
-                state.insertMode = !state.insertMode
+                val editor = state.listEditor
+                if (state.view == CalculatorView.LIST_EDITOR &&
+                    editor != null &&
+                    ListEditorController.editingHeader(editor)
+                ) {
+                    ListEditorController.beginNamedListCreation(editor)
+                } else {
+                    state.insertMode = !state.insertMode
+                }
+                return DispatchResult.Handled
+            }
+            CalculatorCommand.OpenListLiteral -> {
+                if (state.view != CalculatorView.LIST_EDITOR) {
+                    appendToEditor(state.view, "{")
+                    return DispatchResult.Handled
+                }
+            }
+            CalculatorCommand.CloseListLiteral -> {
+                if (state.view != CalculatorView.LIST_EDITOR) {
+                    appendToEditor(state.view, "}")
+                    return DispatchResult.Handled
+                }
+            }
+            is CalculatorCommand.InsertListName -> {
+                appendToEditor(state.view, command.name.token)
                 return DispatchResult.Handled
             }
             else -> Unit
@@ -169,6 +198,11 @@ class CalculatorController(
             CalculatorView.ZOOM -> handleZoom(command, graphAspect)
             CalculatorView.ZOOM_FACTORS -> handleZoomFactors(command)
             CalculatorView.COMPACT_MENU -> handleCompactMenu(command)
+            CalculatorView.LIST_EDITOR -> ListEditorController.handle(
+                command,
+                state.listEditor ?: ListEditorState().also { state.listEditor = it },
+                state.insertMode
+            )
             CalculatorView.GRAPH -> handleGraph(command, graphAspect)
         }
         return DispatchResult.Handled
@@ -250,7 +284,9 @@ class CalculatorController(
             CalculatorCommand.Up -> menu.selectPreviousItem()
             CalculatorCommand.Down -> menu.selectNextItem()
             CalculatorCommand.Enter -> activateCompactMenuItem(menu)
-            CalculatorCommand.Clear -> closeCompactMenu(menu)
+            CalculatorCommand.Clear -> {
+                if (!menu.navigateBack()) closeCompactMenu(menu)
+            }
             is CalculatorCommand.Digit -> {
                 if (menu.selectHotkey(command.value.toString())) {
                     activateCompactMenuItem(menu)
@@ -268,8 +304,8 @@ class CalculatorController(
     private fun handleFunctionMenu(command: CalculatorCommand) {
         val menu = state.functionMenu ?: return
         when (command) {
-            CalculatorCommand.Left -> menu.selectPreviousTab()
-            CalculatorCommand.Right -> menu.selectNextTab()
+            CalculatorCommand.Left -> menu.navigateLeft()
+            CalculatorCommand.Right -> menu.navigateRight()
             CalculatorCommand.Up -> menu.selectPreviousItem()
             CalculatorCommand.Down -> menu.selectNextItem()
             CalculatorCommand.Enter -> activateFunctionMenuItem(menu)
@@ -296,7 +332,9 @@ class CalculatorController(
             CalculatorKey.UP -> menu.selectPreviousItem()
             CalculatorKey.DOWN -> menu.selectNextItem()
             CalculatorKey.ENTER -> activateCompactMenuItem(menu)
-            CalculatorKey.CLEAR -> closeCompactMenu(menu)
+            CalculatorKey.CLEAR -> {
+                if (!menu.navigateBack()) closeCompactMenu(menu)
+            }
             CalculatorKey.Y_EQUALS -> switchView(CalculatorView.Y_EQUALS)
             CalculatorKey.WINDOW -> switchView(CalculatorView.WINDOW)
             CalculatorKey.ZOOM -> switchView(CalculatorView.ZOOM)
@@ -319,8 +357,8 @@ class CalculatorController(
         if (state.modifier != ModifierLayer.NORMAL) return false
         val menu = state.functionMenu ?: return false
         when (key) {
-            CalculatorKey.LEFT -> menu.selectPreviousTab()
-            CalculatorKey.RIGHT -> menu.selectNextTab()
+            CalculatorKey.LEFT -> menu.navigateLeft()
+            CalculatorKey.RIGHT -> menu.navigateRight()
             CalculatorKey.UP -> menu.selectPreviousItem()
             CalculatorKey.DOWN -> menu.selectNextItem()
             CalculatorKey.ENTER -> activateFunctionMenuItem(menu)
@@ -366,6 +404,9 @@ class CalculatorController(
         state.modifier = ModifierLayer.NORMAL
         state.historyNavigationPosition = 0
         state.entryRecallPosition = 0
+        if (view == CalculatorView.LIST_EDITOR && state.listEditor == null) {
+            state.listEditor = ListEditorState()
+        }
     }
 
     private fun openCompactMenu(id: CompactMenuId) {
@@ -397,6 +438,8 @@ class CalculatorController(
                 state.fractionTemplate =
                     FractionTemplateState(action.mixedNumber, returnView)
             }
+            is CompactMenuAction.OpenSubmenu -> menu.openSubmenu(action.definition)
+            CompactMenuAction.OpenListEditor -> switchView(CalculatorView.LIST_EDITOR)
             CompactMenuAction.Unavailable -> Unit
         }
     }
@@ -419,6 +462,20 @@ class CalculatorController(
         state.compactMenu = null
         state.fractionTemplate = null
         state.functionMenu = FunctionMenuState(tab, targetView)
+        state.trace = null
+        state.zoomGraph = null
+        state.historyNavigationPosition = 0
+        state.entryRecallPosition = 0
+        state.modifier = ModifierLayer.NORMAL
+    }
+
+    private fun openDirectFractionTemplate() {
+        val targetView = state.view.takeIf(::isEditableView) ?: CalculatorView.HOME
+        if (targetView != state.view) switchView(targetView)
+        state.compactMenu = null
+        state.functionMenu = null
+        state.fractionTemplate =
+            FractionTemplateState(mixedNumber = false, targetView = targetView)
         state.trace = null
         state.zoomGraph = null
         state.historyNavigationPosition = 0
@@ -635,6 +692,9 @@ class CalculatorController(
         CalculatorCommand.InsertEulerPower -> "e^("
         CalculatorCommand.InsertSquareRoot -> "sqrt("
         CalculatorCommand.InsertScientificExponent -> "EE"
+        CalculatorCommand.OpenListLiteral -> "{"
+        CalculatorCommand.CloseListLiteral -> "}"
+        is CalculatorCommand.InsertListName -> command.name.token
         else -> null
     }
 

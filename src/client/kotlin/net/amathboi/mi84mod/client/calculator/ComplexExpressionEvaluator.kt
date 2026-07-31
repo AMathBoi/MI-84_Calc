@@ -309,10 +309,16 @@ internal class ComplexExpressionEvaluator(
         val magnitude = expression.substring(exponentStart, index).toIntOrNull()
             ?: throw ComplexEvaluationException("Error: Result too large")
         val exponent = if (negative) -magnitude else magnitude
-        if (exponent !in -MAX_SCIENTIFIC_EXPONENT..MAX_SCIENTIFIC_EXPONENT) {
-            throw ComplexEvaluationException("Error: Result too large")
+        if (magnitude > MAX_SCIENTIFIC_EXPONENT) {
+            throw ComplexEvaluationException(
+                if (negative) "Error: Result out of range" else "Error: Result too large"
+            )
         }
-        return ComplexNumber(mantissa * Math.pow(10.0, exponent.toDouble()))
+        val value = mantissa * Math.pow(10.0, exponent.toDouble())
+        if (!value.isFinite() || (value == 0.0 && mantissa != 0.0)) {
+            throw ComplexEvaluationException("Error: Result out of range")
+        }
+        return ComplexNumber(value)
     }
 
     private fun parseFunctionArguments(): List<ComplexNumber> {
@@ -386,7 +392,7 @@ internal class ComplexExpressionEvaluator(
         const val SQUARE_ROOT = "sqrt"
         const val DEGREE_MARKER = '°'
         const val RADIAN_MARKER = 'ʳ'
-        const val MAX_SCIENTIFIC_EXPONENT = 4_000
+        const val MAX_SCIENTIFIC_EXPONENT = 308
         val FUNCTIONS = listOf(
             INVERSE_SINE,
             INVERSE_COSINE,

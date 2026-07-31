@@ -45,6 +45,10 @@ object YEqualsMemory {
             cursors[selectedIndex] =
                 ExpressionEditingTokens.structuredFractionEndingAt(equations[selectedIndex], cursor)
                     ?.let { cursor - it.length }
+                    ?: ExpressionEditingTokens.namedVariableEndingAt(
+                        equations[selectedIndex],
+                        cursor
+                    )?.let { cursor - it.length }
                     ?: cursor - 1
         }
     }
@@ -56,6 +60,8 @@ object YEqualsMemory {
             cursors[selectedIndex] =
                 ExpressionEditingTokens.structuredFractionStartingAt(expression, cursor)
                     ?.let { cursor + it.length }
+                    ?: ExpressionEditingTokens.namedVariableStartingAt(expression, cursor)
+                        ?.let { cursor + it.length }
                     ?: cursor + 1
         }
     }
@@ -65,7 +71,9 @@ object YEqualsMemory {
         val expression = equations[selectedIndex]
         val cursor = cursors[selectedIndex]
         val replacedLength = if (!insertMode && cursor < expression.length) {
-            ExpressionEditingTokens.structuredFractionStartingAt(expression, cursor)?.length ?: 1
+            ExpressionEditingTokens.structuredFractionStartingAt(expression, cursor)?.length
+                ?: ExpressionEditingTokens.namedVariableStartingAt(expression, cursor)?.length
+                ?: 1
         } else {
             0
         }
@@ -74,6 +82,30 @@ object YEqualsMemory {
         equations[selectedIndex] = expression.removeRange(cursor, cursor + replacedLength)
             .substring(0, cursor) + text + expression.substring(cursor + replacedLength)
         cursors[selectedIndex] += text.length
+        save()
+    }
+
+    fun appendDigit(digit: Char, insertMode: Boolean = false) {
+        require(digit.isDigit())
+        append(
+            ExpressionEditingTokens.digitEntryText(
+                equations[selectedIndex],
+                cursors[selectedIndex],
+                digit
+            ),
+            insertMode
+        )
+    }
+
+    fun toggleCurrentOperandSign() {
+        val edit =
+            ExpressionEditingTokens.toggleOperandSign(
+                equations[selectedIndex],
+                cursors[selectedIndex],
+                MAX_EXPRESSION_LENGTH
+            ) ?: return
+        equations[selectedIndex] = edit.text
+        cursors[selectedIndex] = edit.cursor
         save()
     }
 
@@ -98,7 +130,9 @@ object YEqualsMemory {
         val cursor = cursors[selectedIndex]
         if (cursor < expression.length) {
             val length =
-                ExpressionEditingTokens.structuredFractionStartingAt(expression, cursor)?.length ?: 1
+                ExpressionEditingTokens.structuredFractionStartingAt(expression, cursor)?.length
+                    ?: ExpressionEditingTokens.namedVariableStartingAt(expression, cursor)?.length
+                    ?: 1
             equations[selectedIndex] = expression.removeRange(cursor, cursor + length)
             save()
         }

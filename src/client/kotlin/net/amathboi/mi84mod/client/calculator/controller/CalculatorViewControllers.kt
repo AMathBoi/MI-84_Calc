@@ -110,7 +110,7 @@ object YEqualsViewController {
     fun handle(command: CalculatorCommand, state: CalculatorUiState) {
         when (command) {
             is CalculatorCommand.Digit ->
-                YEqualsMemory.append(command.value.toString(), state.insertMode)
+                YEqualsMemory.appendDigit(command.value, state.insertMode)
             is CalculatorCommand.Operator ->
                 YEqualsMemory.append(command.value.toString(), state.insertMode)
             is CalculatorCommand.Function ->
@@ -124,6 +124,7 @@ object YEqualsViewController {
             CalculatorCommand.OpenParenthesis -> YEqualsMemory.append("(", state.insertMode)
             CalculatorCommand.CloseParenthesis -> YEqualsMemory.append(")", state.insertMode)
             CalculatorCommand.Comma -> YEqualsMemory.append(",", state.insertMode)
+            CalculatorCommand.Negative -> YEqualsMemory.toggleCurrentOperandSign()
             CalculatorCommand.Left -> YEqualsMemory.moveCursorLeft()
             CalculatorCommand.Right -> YEqualsMemory.moveCursorRight()
             CalculatorCommand.Up -> YEqualsMemory.selectPrevious()
@@ -139,7 +140,7 @@ object WindowViewController {
     fun handle(command: CalculatorCommand, state: CalculatorUiState) {
         when (command) {
             is CalculatorCommand.Digit ->
-                WindowSettingsMemory.append(command.value.toString(), state.insertMode)
+                WindowSettingsMemory.appendDigit(command.value, state.insertMode)
             is CalculatorCommand.Operator ->
                 WindowSettingsMemory.append(command.value.toString(), state.insertMode)
             is CalculatorCommand.InsertVariable ->
@@ -148,6 +149,7 @@ object WindowViewController {
             CalculatorCommand.OpenParenthesis -> WindowSettingsMemory.append("(", state.insertMode)
             CalculatorCommand.CloseParenthesis -> WindowSettingsMemory.append(")", state.insertMode)
             CalculatorCommand.Comma -> WindowSettingsMemory.append(",", state.insertMode)
+            CalculatorCommand.Negative -> WindowSettingsMemory.toggleCurrentOperandSign()
             CalculatorCommand.Left -> WindowSettingsMemory.moveCursorLeft()
             CalculatorCommand.Right -> WindowSettingsMemory.moveCursorRight()
             CalculatorCommand.Up -> WindowSettingsMemory.selectPrevious()

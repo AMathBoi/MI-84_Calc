@@ -11,6 +11,7 @@ enum class CalculatorView {
     ZOOM,
     ZOOM_FACTORS,
     COMPACT_MENU,
+    LIST_EDITOR,
     GRAPH
 }
 
@@ -64,4 +65,5 @@ class CalculatorUiState {
     var compactMenu: CompactMenuState? = null
     var functionMenu: FunctionMenuState? = null
     var fractionTemplate: FractionTemplateState? = null
+    var listEditor: ListEditorState? = null
 }

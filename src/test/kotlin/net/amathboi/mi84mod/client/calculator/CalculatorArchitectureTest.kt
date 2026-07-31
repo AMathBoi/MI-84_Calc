@@ -92,7 +92,16 @@ class CalculatorArchitectureTest {
             CalculatorKey.ENTER to CalculatorCommand.RecallEntry,
             CalculatorKey.DELETE to CalculatorCommand.ToggleInsertMode,
             CalculatorKey.MATH to CalculatorCommand.OpenCompactMenu(CompactMenuId.TEST),
-            CalculatorKey.APPS to CalculatorCommand.OpenCompactMenu(CompactMenuId.ANGLE)
+            CalculatorKey.STAT to CalculatorCommand.OpenCompactMenu(CompactMenuId.LIST),
+            CalculatorKey.APPS to CalculatorCommand.OpenCompactMenu(CompactMenuId.ANGLE),
+            CalculatorKey.OPEN_PARENTHESIS to CalculatorCommand.OpenListLiteral,
+            CalculatorKey.CLOSE_PARENTHESIS to CalculatorCommand.CloseListLiteral,
+            CalculatorKey.DIGIT_1 to CalculatorCommand.InsertListName(CalculatorListName.L1),
+            CalculatorKey.DIGIT_2 to CalculatorCommand.InsertListName(CalculatorListName.L2),
+            CalculatorKey.DIGIT_3 to CalculatorCommand.InsertListName(CalculatorListName.L3),
+            CalculatorKey.DIGIT_4 to CalculatorCommand.InsertListName(CalculatorListName.L4),
+            CalculatorKey.DIGIT_5 to CalculatorCommand.InsertListName(CalculatorListName.L5),
+            CalculatorKey.DIGIT_6 to CalculatorCommand.InsertListName(CalculatorListName.L6)
         )
         val implementedAlphaCommands = listOf(
             CalculatorKey.MATH,
@@ -125,7 +134,9 @@ class CalculatorArchitectureTest {
         ).zip(CalculatorVariable.entries).toMap()
         val implementedAlphaMenus = mapOf(
             CalculatorKey.Y_EQUALS to CalculatorCommand.OpenFunctionMenu(FunctionMenuTab.FRAC),
-            CalculatorKey.WINDOW to CalculatorCommand.OpenFunctionMenu(FunctionMenuTab.FUNC)
+            CalculatorKey.WINDOW to CalculatorCommand.OpenFunctionMenu(FunctionMenuTab.FUNC),
+            CalculatorKey.TRACE to CalculatorCommand.OpenFunctionMenu(FunctionMenuTab.YVAR),
+            CalculatorKey.VARIABLE to CalculatorCommand.BeginFractionTemplate
         )
         nonModifierKeys.forEach { key ->
             when {
@@ -239,12 +250,14 @@ class CalculatorArchitectureTest {
     }
 
     @Test
-    fun unsupportedPrimaryKeysAreReportedWithoutChangingView() {
+    fun approvedStatEditOpensFromTheExplicitStatMenu() {
         val controller = CalculatorController()
         val result = controller.dispatch(CalculatorInputEvent(CalculatorKey.STAT))
 
-        assertIs<DispatchResult.Unsupported>(result)
-        assertEquals(CalculatorView.HOME, controller.state.view)
+        assertEquals(DispatchResult.Handled, result)
+        assertEquals(CalculatorView.COMPACT_MENU, controller.state.view)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ENTER))
+        assertEquals(CalculatorView.LIST_EDITOR, controller.state.view)
     }
 
     @Test
@@ -268,6 +281,18 @@ class CalculatorArchitectureTest {
         assertEquals(
             CalculatorCommand.OpenFunctionMenu(FunctionMenuTab.FUNC),
             CalculatorKeyBindings.resolve(CalculatorKey.WINDOW, ModifierLayer.ALPHA)
+        )
+        assertEquals(
+            CalculatorCommand.OpenCompactMenu(CompactMenuId.VARS),
+            CalculatorKeyBindings.resolve(CalculatorKey.VARS, ModifierLayer.NORMAL)
+        )
+        assertEquals(
+            CalculatorCommand.OpenFunctionMenu(FunctionMenuTab.YVAR),
+            CalculatorKeyBindings.resolve(CalculatorKey.TRACE, ModifierLayer.ALPHA)
+        )
+        assertEquals(
+            CalculatorCommand.BeginFractionTemplate,
+            CalculatorKeyBindings.resolve(CalculatorKey.VARIABLE, ModifierLayer.ALPHA)
         )
         assertIs<CalculatorCommand.Placeholder>(
             CalculatorKeyBindings.resolve(CalculatorKey.VARS, ModifierLayer.SECOND)

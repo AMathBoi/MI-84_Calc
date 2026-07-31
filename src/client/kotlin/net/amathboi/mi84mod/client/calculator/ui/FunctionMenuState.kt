@@ -23,8 +23,10 @@ data class FunctionMenuItem(
     val available: Boolean get() = action != FunctionMenuAction.Unavailable
 }
 
-/** Approved F1–F4 bottom-tab overlay content. F3/F4 stay visible but unavailable for now. */
+/** Approved F1–F4 bottom-tab overlay content. F3 stays visible but unavailable for now. */
 object FunctionMenuDefinitions {
+    private val Y_EQUALS_SUBSCRIPTS = listOf("₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉")
+
     private val items = mapOf(
         FunctionMenuTab.FRAC to listOf(
             FunctionMenuItem("1", "n/d", FunctionMenuAction.BeginFractionTemplate(false)),
@@ -47,9 +49,14 @@ object FunctionMenuDefinitions {
         FunctionMenuTab.MTRX to listOf(
             FunctionMenuItem("", "MTRX not implemented", FunctionMenuAction.Unavailable)
         ),
-        FunctionMenuTab.YVAR to listOf(
-            FunctionMenuItem("", "YVAR not implemented", FunctionMenuAction.Unavailable)
-        )
+        FunctionMenuTab.YVAR to
+            (1..9).map { index ->
+                FunctionMenuItem(
+                    index.toString(),
+                    "Y${Y_EQUALS_SUBSCRIPTS[index - 1]}",
+                    FunctionMenuAction.InsertToken(ExpressionEditingTokens.yFunctionToken(index))
+                )
+            }
     )
 
     fun items(tab: FunctionMenuTab): List<FunctionMenuItem> = items.getValue(tab)
@@ -88,12 +95,38 @@ class FunctionMenuState(
             (selectedTabIndex + 1).coerceAtMost(FunctionMenuTab.entries.lastIndex)
     }
 
+    fun navigateLeft() {
+        if (selectedTab == FunctionMenuTab.YVAR && selectedItemIndex >= YVAR_COLUMN_ROWS) {
+            selectedItemIndex -= YVAR_COLUMN_ROWS
+        } else {
+            selectPreviousTab()
+        }
+    }
+
+    fun navigateRight() {
+        if (selectedTab == FunctionMenuTab.YVAR && selectedItemIndex < YVAR_COLUMN_ROWS) {
+            selectedItemIndex += YVAR_COLUMN_ROWS
+        } else {
+            selectNextTab()
+        }
+    }
+
     fun selectPreviousItem() {
-        selectedItemIndex--
+        selectedItemIndex =
+            if (selectedTab == FunctionMenuTab.YVAR) {
+                (selectedItemIndex - 1).coerceAtLeast(columnStart())
+            } else {
+                selectedItemIndex - 1
+            }
     }
 
     fun selectNextItem() {
-        selectedItemIndex++
+        selectedItemIndex =
+            if (selectedTab == FunctionMenuTab.YVAR) {
+                (selectedItemIndex + 1).coerceAtMost(columnEnd())
+            } else {
+                selectedItemIndex + 1
+            }
     }
 
     fun selectHotkey(hotkey: String): Boolean {
@@ -101,6 +134,20 @@ class FunctionMenuState(
         if (index < 0) return false
         selectedItemIndex = index
         return true
+    }
+
+    private fun columnStart(): Int =
+        if (selectedItemIndex < YVAR_COLUMN_ROWS) 0 else YVAR_COLUMN_ROWS
+
+    private fun columnEnd(): Int =
+        if (selectedItemIndex < YVAR_COLUMN_ROWS) {
+            YVAR_COLUMN_ROWS - 1
+        } else {
+            items.lastIndex
+        }
+
+    companion object {
+        const val YVAR_COLUMN_ROWS = 5
     }
 }
 

@@ -28,22 +28,22 @@ Y=, or Window depending on the active view.
 | Y= | Open Y= view | Complete | STAT PLOT menu | Deferred — subsystem and visual review | F1 FRAC function-menu overlay | Complete — approved Phase 4 overlay and fraction template |
 | Window | Open Window view | Complete | TBLSET screen | Deferred — visual review | F2 FUNC function-menu overlay | Partial — approved Phase 4 overlay; numerical calculus rows visibly unavailable |
 | Zoom | Open Zoom view | Complete | FORMAT screen | Deferred — visual review | F3 MTRX shortcut menu | Deferred — subsystem and visual review |
-| Trace | Begin trace in Graph | Complete | CALC graph-analysis menu | Deferred — visual review | F4 YVAR shortcut menu | Deferred — visual review |
+| Trace | Begin trace in Graph | Complete | CALC graph-analysis menu | Deferred — visual review | F4 YVAR shortcut menu | Complete — approved two-column Function Y1–Y9 menu |
 | Graph | Open Graph view | Complete | TABLE view | Deferred — visual review | F5 context-sensitive special menu | Deferred — visual review |
 | 2nd | Toggle one-shot 2nd layer | Complete | Toggle/cancel 2nd | Complete | Switch from Alpha to 2nd | Complete |
 | Mode | Open Mode view | Complete | Quit: return to Home | Complete | No shifted function | No shifted function |
-| Del | Forward delete | Complete | INS: toggle insert/overwrite editing | Complete | No shifted function | No shifted function |
+| Del | Forward delete | Complete | INS: toggle insert/overwrite editing; create a named list when a STAT→Edit header is selected | Partial — context-specific named-list creation complete | No shifted function | No shifted function |
 | Down | Move/select down | Complete | No shifted function | No shifted function | No shifted function | No shifted function |
 | Up | Move/select up | Complete | No shifted function | No shifted function | No shifted function | No shifted function |
 | Alpha | Toggle one-shot Alpha layer | Complete | A-LOCK: persistent Alpha lock | Complete | Toggle/cancel Alpha | Complete |
-| X,T,θ,n | Insert `X` | Complete | LINK SEND/RECEIVE screen | Deferred — subsystem and visual review | Fraction template | Deferred — visual review |
-| Stat | STAT EDIT/CALC/TESTS menu | Deferred — subsystem and visual review | LIST NAMES/OPS/MATH menu | Deferred — subsystem and visual review | No shifted function | No shifted function |
+| X,T,θ,n | Insert `X` | Complete | LINK SEND/RECEIVE screen | Deferred — subsystem and visual review | Open direct `n/d` fraction template | Complete — approved Phase 4 structured fraction editor |
+| Stat | STAT EDIT table | Complete for Phase 5 real-list editing; CALC/TESTS belong to Phase 9 | LIST NAMES/OPS/MATH menu | Complete for reviewed real-list scope; Select and matrix conversions remain with owning later phases | No shifted function | No shifted function |
 | Left | Move/select left | Complete | No shifted function | No shifted function | No shifted function | No shifted function |
 | Right | Move/select right | Complete | No shifted function | No shifted function | No shifted function | No shifted function |
 | Math | MATH/NUM/CMPLX/PROB/FRAC menu | Partial: approved Phase 4 menu; supported scalar/template rows complete and dependent rows visibly unavailable | TEST/LOGIC/CONDITIONS menu | Partial: TEST/LOGIC complete; CONDITIONS visible but unavailable pending template review | Insert `A`; Zoom shortcut A in Zoom | Complete |
 | Apps | Installed-applications menu | Deferred — subsystem and visual review | ANGLE menu | Partial: degree/radian markers and coordinate conversions complete; minute and `►DMS` visibly unavailable | Insert `B`; Zoom shortcut B in Zoom | Complete |
 | Prgm | PRGM EXEC/EDIT/NEW menu | Deferred — subsystem and visual review | DRAW/POINTS/STO menu | Deferred — subsystem and visual review | Insert `C`; Zoom shortcut C in Zoom | Complete |
-| Vars | VARS/Y-VARS menu | Deferred — visual review | DISTR/DRAW menu | Deferred — subsystem and visual review | No shifted function | No shifted function |
+| Vars | VARS/Y-VARS menu | Partial — approved nested Window X/Y, Zoom ZX/ZY, and Y-VARS Function menus; other domain tabs and unsupported variables visibly unavailable | DISTR/DRAW menu | Deferred — subsystem and visual review | No shifted function | No shifted function |
 | Clear | Clear active editor/value | Complete | No shifted function | No shifted function | No shifted function | No shifted function |
 | x⁻¹ | Apply/insert reciprocal | Complete | MATRIX NAMES/MATH/EDIT menu | Deferred — subsystem and visual review | Insert `D`; Zoom shortcut D in Zoom | Complete |
 | sin | Insert `sin(` | Complete | Insert `sin⁻¹(` | Complete | Insert `E`; Zoom shortcut E in Zoom | Complete |
@@ -51,9 +51,9 @@ Y=, or Window depending on the active view.
 | tan | Insert `tan(` | Complete | Insert `tan⁻¹(` | Complete | Insert `G`; Zoom shortcut G in Zoom | Complete |
 | ^ | Insert exponent operator | Complete | Insert `π` | Complete | Insert `H` | Complete |
 | x² | Apply/insert square | Complete | Insert linear `sqrt(` | Complete | Insert `I` | Complete |
-| , | Insert comma | Partial: evaluates implemented multi-argument scalar functions; broader function families remain deferred | Insert `EE` exponent marker | Complete | Insert `J` | Complete |
-| ( | Insert opening parenthesis | Complete | Insert `{` list opener | Deferred — subsystem | Insert `K` | Complete |
-| ) | Insert closing parenthesis | Complete | Insert `}` list closer | Deferred — subsystem | Insert `L` | Complete |
+| , | Insert comma | Partial: evaluates implemented multi-argument scalar functions; broader function families remain deferred | Insert `EE` exponent marker | Complete — exponent limited to `-308..308` with explicit range errors | Insert `J` | Complete |
+| ( | Insert opening parenthesis | Complete | Insert `{` list opener | Partial — list-header editor only | Insert `K` | Complete |
+| ) | Insert closing parenthesis | Complete | Insert `}` list closer | Partial — list-header editor only | Insert `L` | Complete |
 | ÷ | Insert division operator | Complete | Insert Euler's constant `e` | Complete | Insert `M` | Complete |
 | log | Insert `log(` | Complete | Insert `10^(` | Complete | Insert `N` | Complete |
 | 7 | Insert digit / Zoom hotkey 7 | Complete | Insert sequence variable `u` | Deferred — subsystem | Insert `O` | Complete |
@@ -73,7 +73,7 @@ Y=, or Window depending on the active view.
 | On | Wake/cancel calculator operation | Deferred — visual review | OFF: turn LCD off while retaining memory | Deferred — visual review | No shifted function | No shifted function |
 | 0 | Insert digit / Zoom hotkey 0 | Complete | No shifted function | No shifted function | Insert space | Deferred — subsystem |
 | . | Insert decimal point | Complete | Insert imaginary unit `i` | Complete | Insert colon `:` | Deferred — subsystem |
-| (−) | Toggle current operand sign | Complete | Insert `Ans` | Complete | Insert question mark `?` | Deferred — subsystem |
+| (−) | Toggle current operand sign | Complete in Home, Y=, and Window | Insert `Ans` | Complete | Insert question mark `?` | Deferred — subsystem |
 | Enter | Submit/confirm/select | Complete | ENTRY: recall earlier Home entries | Complete | SOLVE in Numeric Solver | Deferred — visual review |
 
 ## View interpretation summary

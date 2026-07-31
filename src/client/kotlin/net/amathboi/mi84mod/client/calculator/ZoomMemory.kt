@@ -41,6 +41,10 @@ object ZoomMemory {
         return true
     }
 
+    /** Values exposed by VARS > Zoom; before the first ZoomSto they mirror the current window. */
+    fun variableWindow(): List<String> =
+        storedWindow?.toList() ?: WindowSettingsMemory.snapshot()
+
     fun denominators(): List<Int> = denominatorChoices
 
     fun selectedDenominatorIndex(): Int = denominatorIndex

@@ -1,6 +1,7 @@
 package net.amathboi.mi84mod.client.calculator.input
 
 import net.amathboi.mi84mod.client.calculator.CalculatorVariable
+import net.amathboi.mi84mod.client.calculator.CalculatorListName
 import net.amathboi.mi84mod.client.calculator.ui.CalculatorView
 import net.amathboi.mi84mod.client.calculator.ui.CompactMenuId
 import net.amathboi.mi84mod.client.calculator.ui.FunctionMenuTab
@@ -19,6 +20,7 @@ sealed interface CalculatorCommand {
     data class OpenView(val view: CalculatorView) : CalculatorCommand
     data class OpenCompactMenu(val menu: CompactMenuId) : CalculatorCommand
     data class OpenFunctionMenu(val tab: FunctionMenuTab) : CalculatorCommand
+    data object BeginFractionTemplate : CalculatorCommand
     data object QuitToHome : CalculatorCommand
     data object BeginTrace : CalculatorCommand
     data object ToggleSecond : CalculatorCommand
@@ -50,6 +52,9 @@ sealed interface CalculatorCommand {
     data object InsertEulerPower : CalculatorCommand
     data object InsertSquareRoot : CalculatorCommand
     data object InsertScientificExponent : CalculatorCommand
+    data object OpenListLiteral : CalculatorCommand
+    data object CloseListLiteral : CalculatorCommand
+    data class InsertListName(val name: CalculatorListName) : CalculatorCommand
     data object RecallEntry : CalculatorCommand
     data object ToggleInsertMode : CalculatorCommand
     data class InsertVariable(val variable: CalculatorVariable) : CalculatorCommand
@@ -87,13 +92,24 @@ object CalculatorKeyBindings {
         CalculatorKey.ENTER -> CalculatorCommand.RecallEntry
         CalculatorKey.DELETE -> CalculatorCommand.ToggleInsertMode
         CalculatorKey.MATH -> CalculatorCommand.OpenCompactMenu(CompactMenuId.TEST)
+        CalculatorKey.STAT -> CalculatorCommand.OpenCompactMenu(CompactMenuId.LIST)
         CalculatorKey.APPS -> CalculatorCommand.OpenCompactMenu(CompactMenuId.ANGLE)
+        CalculatorKey.OPEN_PARENTHESIS -> CalculatorCommand.OpenListLiteral
+        CalculatorKey.CLOSE_PARENTHESIS -> CalculatorCommand.CloseListLiteral
+        CalculatorKey.DIGIT_1 -> CalculatorCommand.InsertListName(CalculatorListName.L1)
+        CalculatorKey.DIGIT_2 -> CalculatorCommand.InsertListName(CalculatorListName.L2)
+        CalculatorKey.DIGIT_3 -> CalculatorCommand.InsertListName(CalculatorListName.L3)
+        CalculatorKey.DIGIT_4 -> CalculatorCommand.InsertListName(CalculatorListName.L4)
+        CalculatorKey.DIGIT_5 -> CalculatorCommand.InsertListName(CalculatorListName.L5)
+        CalculatorKey.DIGIT_6 -> CalculatorCommand.InsertListName(CalculatorListName.L6)
         else -> CalculatorCommand.Placeholder(key, ModifierLayer.SECOND)
     }
 
     private fun alphaCommand(key: CalculatorKey): CalculatorCommand = when (key) {
         CalculatorKey.Y_EQUALS -> CalculatorCommand.OpenFunctionMenu(FunctionMenuTab.FRAC)
         CalculatorKey.WINDOW -> CalculatorCommand.OpenFunctionMenu(FunctionMenuTab.FUNC)
+        CalculatorKey.TRACE -> CalculatorCommand.OpenFunctionMenu(FunctionMenuTab.YVAR)
+        CalculatorKey.VARIABLE -> CalculatorCommand.BeginFractionTemplate
         CalculatorKey.MATH -> CalculatorCommand.InsertVariable(CalculatorVariable.A)
         CalculatorKey.APPS -> CalculatorCommand.InsertVariable(CalculatorVariable.B)
         CalculatorKey.PROGRAM -> CalculatorCommand.InsertVariable(CalculatorVariable.C)
@@ -132,6 +148,8 @@ object CalculatorKeyBindings {
         CalculatorKey.GRAPH -> CalculatorCommand.OpenView(CalculatorView.GRAPH)
         CalculatorKey.MODE -> CalculatorCommand.OpenView(CalculatorView.MODE)
         CalculatorKey.MATH -> CalculatorCommand.OpenCompactMenu(CompactMenuId.MATH)
+        CalculatorKey.VARS -> CalculatorCommand.OpenCompactMenu(CompactMenuId.VARS)
+        CalculatorKey.STAT -> CalculatorCommand.OpenCompactMenu(CompactMenuId.STAT)
         CalculatorKey.DELETE -> CalculatorCommand.Delete
         CalculatorKey.DOWN -> CalculatorCommand.Down
         CalculatorKey.UP -> CalculatorCommand.Up
@@ -169,10 +187,8 @@ object CalculatorKeyBindings {
         CalculatorKey.NEGATIVE -> CalculatorCommand.Negative
         CalculatorKey.ENTER -> CalculatorCommand.Enter
         CalculatorKey.SECOND, CalculatorKey.ALPHA -> error("Modifier keys are resolved before primary commands")
-        CalculatorKey.STAT,
         CalculatorKey.APPS,
         CalculatorKey.PROGRAM,
-        CalculatorKey.VARS,
         CalculatorKey.ON -> CalculatorCommand.Unsupported(key)
     }
 }

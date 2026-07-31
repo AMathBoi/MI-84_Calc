@@ -21,10 +21,24 @@ All notable changes to MI-84 Calculator are documented here.
 
 - Visible but unfinished calculator operations are explicitly unavailable instead of falling back
   to a different key action.
+- Named Y-function insertions now use distinct Y₁–Y₉ tokens while existing raw `Y1`–`Y9` saves
+  remain compatible; scalar `Y` followed by a digit stays scalar multiplication.
+- Scientific `EE` exponents are limited to ±308, and floating-function conversion reports an
+  explicit range error instead of silently underflowing a nonzero value to zero.
+
+### Fixed
+
+- Common 30°/45°/60°/90° forward and inverse trigonometric identities now normalize
+  deterministically; tangent at odd multiples of 90° reports a domain error.
+- Graph sampling checks actual midpoints so pole-like discontinuities are not joined as asymptotes.
+- The `(−)` key now toggles the active operand in Y= and Window as well as Home.
+- F4 YVAR, nested VARS, direct fraction-template, and shifted Y= status documentation now matches
+  the implementation.
 
 ### Known issues
 
-- Some exact results may display small floating-point residue, such as `sin(π)`.
-- `Y=Ans` fails silently in the Y= editor.
-- `2nd`-modified entries do not insert in the Y= editor.
 - Insert mode has no visual indicator.
+- The fixed-size overlay can be clipped at unusually small GUI dimensions and is not clamped after
+  a resize.
+- Stored Mode choices whose owning graph/statistics/exact-answer systems are deferred do not yet
+  alter behavior.

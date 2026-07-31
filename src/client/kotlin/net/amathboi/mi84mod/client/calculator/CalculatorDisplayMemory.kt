@@ -92,9 +92,10 @@ object CalculatorDisplayMemory {
 
     fun appendDigit(digit: Char, insertMode: Boolean = false) {
         require(digit.isDigit()) { "Only digits can be added to calculator display memory." }
-        if (currentEntry.length == MAX_CHARACTERS) return
-
-        appendText(digit.toString(), insertMode)
+        appendText(
+            ExpressionEditingTokens.digitEntryText(currentEntry, cursor, digit),
+            insertMode
+        )
     }
 
     /** Adds or replaces the pending arithmetic operation. */
@@ -119,30 +120,11 @@ object CalculatorDisplayMemory {
 
     /** Toggles the sign of the number currently being entered. */
     fun toggleCurrentNumberSign() {
-        scientificExponentSignIndex()?.let { signIndex ->
-            currentEntry = if (currentEntry.getOrNull(signIndex) == '-') {
-                if (signIndex < cursor) cursor--
-                currentEntry.removeRange(signIndex, signIndex + 1)
-            } else if (currentEntry.length < MAX_CHARACTERS) {
-                if (signIndex <= cursor) cursor++
-                currentEntry.substring(0, signIndex) + '-' + currentEntry.substring(signIndex)
-            } else {
-                currentEntry
-            }
-            save()
-            return
-        }
-
-        val operandStart = currentOperandStart()
-        currentEntry = if (currentEntry.length > operandStart && currentEntry[operandStart] == '-') {
-            if (operandStart < cursor) cursor--
-            currentEntry.removeRange(operandStart, operandStart + 1)
-        } else if (currentEntry.length < MAX_CHARACTERS) {
-            if (operandStart <= cursor) cursor++
-            currentEntry.substring(0, operandStart) + '-' + currentEntry.substring(operandStart)
-        } else {
-            currentEntry
-        }
+        val edit =
+            ExpressionEditingTokens.toggleOperandSign(currentEntry, cursor, MAX_CHARACTERS)
+                ?: return
+        currentEntry = edit.text
+        cursor = edit.cursor
         save()
     }
 
@@ -239,6 +221,16 @@ object CalculatorDisplayMemory {
         appendText(token, insertMode)
     }
 
+    /** Phase 5 nonvisual list syntax. Result presentation is intentionally deferred. */
+    fun appendListLiteralOpen(insertMode: Boolean = false) = appendPrimaryToken("{", insertMode)
+
+    fun appendListLiteralClose(insertMode: Boolean = false) {
+        if (endsOperandBeforeCursor()) appendText("}", insertMode)
+    }
+
+    fun appendListName(name: CalculatorListName, insertMode: Boolean = false) =
+        appendPrimaryToken(name.token, insertMode)
+
     fun replaceStructuredFraction(start: Int, original: String, replacement: String): Boolean {
         if (start !in 0..currentEntry.length ||
             !currentEntry.regionMatches(start, original, 0, original.length) ||
@@ -282,7 +274,10 @@ object CalculatorDisplayMemory {
         }
 
         val completedEntry = completeFunctionParentheses(currentEntry)
-        val result = if (!endsOperand(completedEntry) || completedEntry.count { it == '(' } != completedEntry.count { it == ')' }) {
+        val listLiteral = completedEntry.startsWith('{') && completedEntry.endsWith('}')
+        val result = if ((!listLiteral && !endsOperand(completedEntry)) ||
+            completedEntry.count { it == '(' } != completedEntry.count { it == ')' }
+        ) {
             EvaluationResult(SYNTAX_ERROR)
         } else {
             evaluate(completedEntry)
@@ -322,25 +317,63 @@ object CalculatorDisplayMemory {
     }
 
     /** Evaluates a saved Y= expression at the supplied X value for graph rendering. */
-    fun evaluateForGraph(expression: String, graphX: Double): Double? = runCatching {
-        ExpressionParser(
-            completeFunctionParentheses(expression),
-            latestAnswer(),
-            realVariableValues(BigDecimal.valueOf(graphX))
-        ).parse().toDouble()
-    }.getOrNull()?.takeIf(Double::isFinite)
+    fun evaluateForGraph(expression: String, graphX: Double): Double? {
+        val expandedExpression = expandNamedVariables(expression) ?: return null
+        return runCatching {
+            val value = ExpressionParser(
+                completeFunctionParentheses(expandedExpression),
+                latestAnswer(),
+                realVariableValues(BigDecimal.valueOf(graphX))
+            ).parse()
+            requireSupportedDouble(value)
+        }.getOrNull()
+    }
+
+    /** Evaluates a real scalar list-cell expression without rounding the stored value. */
+    fun evaluateRealForListEntry(expression: String): BigDecimal? {
+        if (expression.isBlank()) return null
+        val completed = completeFunctionParentheses(expression)
+        if (!endsOperand(completed) || completed.count { it == '(' } != completed.count { it == ')' }) {
+            return null
+        }
+        val result = evaluate(completed)
+        return result.value?.takeIf { result.imaginaryValue == null }
+    }
 
     private fun evaluate(expression: String): EvaluationResult {
-        val realEvaluation = runCatching { evaluateValue(expression) }
+        runCatching {
+            CalculatorListExpressionEvaluator.evaluate(expression) { element ->
+                val result = evaluate(element)
+                val real = result.value ?: error("List elements must be scalar values")
+                CalculatorScalarValue(real, result.imaginaryValue)
+            }
+        }.getOrNull()?.let { listValue ->
+            return when (listValue) {
+                is CalculatorListExpressionEvaluator.Value.List ->
+                    EvaluationResult(formatListResult(listValue.value))
+                is CalculatorListExpressionEvaluator.Value.Scalar ->
+                    EvaluationResult(format(listValue.value.real), listValue.value.real, listValue.value.imaginary)
+            }
+        }
+        val expandedExpression =
+            expandNamedVariables(expression) ?: return EvaluationResult(SYNTAX_ERROR)
+        val realEvaluation = runCatching { evaluateValue(expandedExpression) }
         realEvaluation.getOrNull()?.let { value ->
-            val display = preferredFractionDisplay(expression) ?: format(value)
+            val display = preferredFractionDisplay(expandedExpression) ?: format(value)
             return EvaluationResult(display, value)
+        }
+        val realFailure = realEvaluation.exceptionOrNull()
+        if (
+            realFailure is CalculatorEvaluationException &&
+            realFailure.message in setOf(DOMAIN_ERROR, RESULT_OUT_OF_RANGE_ERROR, RESULT_TOO_LARGE_ERROR)
+        ) {
+            return EvaluationResult(realFailure.message ?: SYNTAX_ERROR)
         }
 
         if (ModeSettingsMemory.usesRectangularComplexFormat()) {
             val complexEvaluation = runCatching {
                 ComplexExpressionEvaluator(
-                    expression,
+                    expandedExpression,
                     latestComplexAnswer(),
                     complexVariableValues(),
                     ModeSettingsMemory.usesDegrees()
@@ -352,9 +385,8 @@ object CalculatorDisplayMemory {
             }
         }
 
-        val realException = realEvaluation.exceptionOrNull()
-        return if (realException is CalculatorEvaluationException) {
-            EvaluationResult(realException.message ?: SYNTAX_ERROR)
+        return if (realFailure is CalculatorEvaluationException) {
+            EvaluationResult(realFailure.message ?: SYNTAX_ERROR)
         } else {
             EvaluationResult(SYNTAX_ERROR)
         }
@@ -398,6 +430,60 @@ object CalculatorDisplayMemory {
             realVariableValues()
         ).parse()
 
+    /**
+     * VARS tokens remain readable in editors, then expand to the expressions owned by their
+     * backing memories just before evaluation. Recursive expansion permits Y2 to reference Y1
+     * while rejecting direct or indirect cycles.
+     */
+    private fun expandNamedVariables(
+        expression: String,
+        expanding: Set<String> = emptySet()
+    ): String? {
+        val expanded = StringBuilder()
+        var index = 0
+        while (index < expression.length) {
+            val token = NAMED_VARIABLE_TOKENS.firstOrNull {
+                expression.startsWith(it, index)
+            }
+            if (token == null) {
+                expanded.append(expression[index])
+                index++
+                continue
+            }
+            if (token in expanding) return null
+
+            val valueExpression = namedVariableExpression(token) ?: return null
+            val nested = expandNamedVariables(valueExpression, expanding + token) ?: return null
+            expanded.append('(').append(nested).append(')')
+            index += token.length
+        }
+        return expanded.toString()
+    }
+
+    private fun namedVariableExpression(token: String): String? = when (token) {
+        "Xmin" -> WindowSettingsMemory.value(0)
+        "Xmax" -> WindowSettingsMemory.value(1)
+        "Xscl" -> WindowSettingsMemory.value(2)
+        "Ymin" -> WindowSettingsMemory.value(3)
+        "Ymax" -> WindowSettingsMemory.value(4)
+        "Yscl" -> WindowSettingsMemory.value(5)
+        "Xres" -> WindowSettingsMemory.value(6)
+        "ΔX" -> WindowSettingsMemory.value(7)
+        "TraceStep" -> WindowSettingsMemory.value(8)
+        "ZXmin" -> ZoomMemory.variableWindow().getOrNull(0)
+        "ZXmax" -> ZoomMemory.variableWindow().getOrNull(1)
+        "ZXscl" -> ZoomMemory.variableWindow().getOrNull(2)
+        "ZYmin" -> ZoomMemory.variableWindow().getOrNull(3)
+        "ZYmax" -> ZoomMemory.variableWindow().getOrNull(4)
+        "ZYscl" -> ZoomMemory.variableWindow().getOrNull(5)
+        "ZXres" -> ZoomMemory.variableWindow().getOrNull(6)
+        else -> {
+            val functionIndex =
+                ExpressionEditingTokens.yFunctionIndex(token)?.minus(1) ?: return null
+            YEqualsMemory.equation(functionIndex).ifEmpty { null }
+        }
+    }
+
     private fun realVariableValues(xOverride: BigDecimal? = null): Map<CalculatorVariable, BigDecimal?> =
         CalculatorVariable.entries.associateWith { variable ->
             if (variable == CalculatorVariable.X && xOverride != null) {
@@ -417,6 +503,24 @@ object CalculatorDisplayMemory {
         }
 
     private fun format(value: BigDecimal): String = ModeSettingsMemory.formatNumber(value)
+
+    /** Phase 5 list-result presentation: compact braces with space-separated elements. */
+    private fun formatListResult(list: CalculatorListValue): String =
+        list.values.joinToString(separator = " ", prefix = "{", postfix = "}") { value ->
+            if (value.imaginary == null) format(value.real)
+            else formatRectangularComplex(value.real.toDouble(), value.imaginary.toDouble())
+        }
+
+    private fun requireSupportedDouble(value: BigDecimal): Double {
+        val converted = value.toDouble()
+        if (converted.isInfinite()) {
+            throw CalculatorEvaluationException(RESULT_TOO_LARGE_ERROR)
+        }
+        if (converted == 0.0 && value.compareTo(BigDecimal.ZERO) != 0) {
+            throw CalculatorEvaluationException(RESULT_OUT_OF_RANGE_ERROR)
+        }
+        return converted
+    }
 
     private fun complexEvaluationResult(value: ComplexNumber): EvaluationResult {
         val rawRealValue = BigDecimal.valueOf(value.real)
@@ -574,19 +678,24 @@ object CalculatorDisplayMemory {
         canStartOperandAtCursor() || endsOperandBeforeCursor()
 
     private fun endsOperandBeforeCursor(): Boolean =
-        cursor > 0 && currentEntry[cursor - 1].let {
-            it.isDigit() || it == ')' || it == '!' || isVariableSymbol(it) || it == COMPLEX_UNIT ||
-                it == PI_TOKEN || it == EULER_TOKEN ||
-                currentEntry.substring(0, cursor).endsWith(ANSWER_TOKEN)
-        }
+        cursor > 0 && (
+            ExpressionEditingTokens.namedVariableEndingAt(currentEntry, cursor) != null ||
+                currentEntry[cursor - 1].let {
+                    it.isDigit() || it == ')' || it == '!' || isVariableSymbol(it) ||
+                        it == COMPLEX_UNIT || it == PI_TOKEN || it == EULER_TOKEN ||
+                        currentEntry.substring(0, cursor).endsWith(ANSWER_TOKEN)
+                }
+            )
 
     private fun endsOperand(): Boolean = endsOperand(currentEntry)
 
     private fun endsOperand(expression: String): Boolean =
-        expression.lastOrNull()?.let {
-            it.isDigit() || it == ')' || it == '!' || isVariableSymbol(it) || it == COMPLEX_UNIT ||
-                it == PI_TOKEN || it == EULER_TOKEN || expression.endsWith(ANSWER_TOKEN)
-        } == true
+        ExpressionEditingTokens.namedVariableEndingAt(expression, expression.length) != null ||
+            expression.lastOrNull()?.let {
+                it.isDigit() || it == ')' || it == '!' || isVariableSymbol(it) ||
+                    it == COMPLEX_UNIT || it == PI_TOKEN || it == EULER_TOKEN ||
+                    expression.endsWith(ANSWER_TOKEN)
+            } == true
 
     /**
      * Lets function entry omit only its final closing parentheses: `sin(X` becomes `sin(X)`.
@@ -638,23 +747,6 @@ object CalculatorDisplayMemory {
 
     private fun isVariableSymbol(character: Char): Boolean =
         CalculatorVariable.fromSymbol(character) != null
-
-    private fun scientificExponentSignIndex(): Int? {
-        val markerIndex = currentEntry.lastIndexOf(
-            SCIENTIFIC_EXPONENT_TOKEN,
-            startIndex = (cursor - 1).coerceAtLeast(0)
-        )
-        if (markerIndex < currentOperandStart()) return null
-
-        val signIndex = markerIndex + SCIENTIFIC_EXPONENT_TOKEN.length
-        if (cursor < signIndex) return null
-        val exponentPrefix = currentEntry.substring(signIndex, cursor)
-        val digits = exponentPrefix.removePrefix("-")
-        return signIndex.takeIf {
-            (exponentPrefix.isEmpty() || exponentPrefix == "-" || digits.all(Char::isDigit)) &&
-                !digits.contains(SCIENTIFIC_EXPONENT_TOKEN)
-        }
-    }
 
     private fun entryTokenStartingAt(position: Int): String? =
         ExpressionEditingTokens.structuredFractionStartingAt(currentEntry, position)
@@ -717,6 +809,8 @@ object CalculatorDisplayMemory {
     private const val SYNTAX_ERROR = "Error: Syntax"
     private const val DIVISION_BY_ZERO_ERROR = "Error: Division by zero"
     private const val RESULT_TOO_LARGE_ERROR = "Error: Result too large"
+    private const val RESULT_OUT_OF_RANGE_ERROR = "Error: Result out of range"
+    private const val DOMAIN_ERROR = "Error: Domain"
     private const val BINARY_OPERATORS = "+-*/^"
     private const val STORE_OPERATOR = "->"
     private const val ANSWER_TOKEN = "Ans"
@@ -744,7 +838,7 @@ object CalculatorDisplayMemory {
     private const val RADIAN_MARKER = 'ʳ'
     private const val COMPLEX_ZERO_EPSILON = 1.0e-12
     private const val MAX_POWER_RESULT_CHARACTERS = 4_096L
-    private const val MAX_SCIENTIFIC_EXPONENT = 4_000
+    private const val MAX_SCIENTIFIC_EXPONENT = 308
     private const val MAX_HISTORY_ENTRIES = 1_000
     private const val DEFAULT_ROUND_SIGNIFICANT_DIGITS = 10
     private val FRACTION_RESULT_PATTERN = Regex("-?\\d+/-?\\d+")
@@ -775,6 +869,20 @@ object CalculatorDisplayMemory {
         "lcm",
         "gcd",
         "int",
+        "SortA",
+        "SortD",
+        "dim",
+        "Fill",
+        "seq",
+        "cumSum",
+        "ΔList",
+        "augment",
+        "mean",
+        "median",
+        "sum",
+        "prod",
+        "stdDev",
+        "variance",
         "not",
         "sin",
         "cos",
@@ -786,14 +894,46 @@ object CalculatorDisplayMemory {
     private val RELATIONAL_OPERATORS = listOf("≠", "≥", "≤", "=", ">", "<")
     private val BOOLEAN_OPERATOR_TOKENS = listOf("and", "xor", "or")
     private val AUTO_CLOSING_PREFIXES = FUNCTIONS + listOf("10^", "$EULER_TOKEN^")
+    private val NAMED_VARIABLE_TOKENS =
+        (
+            listOf(
+                "TraceStep",
+                "ZXmin",
+                "ZXmax",
+                "ZXscl",
+                "ZYmin",
+                "ZYmax",
+                "ZYscl",
+                "ZXres",
+                "Xmin",
+                "Xmax",
+                "Xscl",
+                "Ymin",
+                "Ymax",
+                "Yscl",
+                "Xres",
+                "ΔX"
+            ) + (1..9).flatMap { index ->
+                listOf(ExpressionEditingTokens.yFunctionToken(index), "Y$index")
+            }
+            )
+            .sortedByDescending(String::length)
     private val ENTRY_TOKENS =
         (
             FUNCTIONS.map { "$it(" } + BOOLEAN_OPERATOR_TOKENS +
+                NAMED_VARIABLE_TOKENS +
                 listOf("10^(", "$EULER_TOKEN^(", ANSWER_TOKEN, SCIENTIFIC_EXPONENT_TOKEN)
             )
             .sortedByDescending(String::length)
-    private val QUARTER_TURN_DEGREES = BigDecimal("90")
-    private val FOUR = BigDecimal("4")
+    private val FULL_TURN_DEGREES = BigDecimal("360")
+    private val INVERSE_IDENTITY_TOLERANCE = BigDecimal("1E-14")
+    private val SPECIAL_ANGLE_DEGREES =
+        listOf(0, 30, 45, 60, 90, 120, 135, 150, 180, 210, 225, 240, 270, 300, 315, 330)
+    private val SQRT_TWO_OVER_TWO = Math.sqrt(0.5)
+    private val SQRT_THREE = Math.sqrt(3.0)
+    private val SQRT_THREE_OVER_TWO = SQRT_THREE / 2.0
+    private val ONE_OVER_SQRT_THREE = 1.0 / SQRT_THREE
+    private const val RADIAN_ANGLE_TOLERANCE_DEGREES = 1.0e-10
     private val MAX_GCD_LCM_ARGUMENT = BigDecimal("1000000000000").toBigInteger()
     private val CALCULATION_CONTEXT = MathContext(34, RoundingMode.HALF_UP)
 
@@ -919,8 +1059,15 @@ object CalculatorDisplayMemory {
                 if (exponent.stripTrailingZeros().scale() <= 0) {
                     integerPower(result, exponent)
                 } else {
-                    val powered = Math.pow(result.toDouble(), exponent.toDouble())
-                    if (!powered.isFinite()) throw CalculatorEvaluationException(RESULT_TOO_LARGE_ERROR)
+                    val powered = Math.pow(
+                        requireSupportedDouble(result),
+                        requireSupportedDouble(exponent)
+                    )
+                    if (powered.isInfinite()) throw CalculatorEvaluationException(RESULT_TOO_LARGE_ERROR)
+                    check(!powered.isNaN()) { "Power is not real" }
+                    if (powered == 0.0 && result.compareTo(BigDecimal.ZERO) != 0) {
+                        throw CalculatorEvaluationException(RESULT_OUT_OF_RANGE_ERROR)
+                    }
                     BigDecimal.valueOf(powered)
                 }
             } else {
@@ -1070,8 +1217,10 @@ object CalculatorDisplayMemory {
             val magnitude = expression.substring(exponentStart, index).toIntOrNull()
                 ?: throw CalculatorEvaluationException(RESULT_TOO_LARGE_ERROR)
             val exponent = if (negative) -magnitude else magnitude
-            if (exponent !in -MAX_SCIENTIFIC_EXPONENT..MAX_SCIENTIFIC_EXPONENT) {
-                throw CalculatorEvaluationException(RESULT_TOO_LARGE_ERROR)
+            if (magnitude > MAX_SCIENTIFIC_EXPONENT) {
+                throw CalculatorEvaluationException(
+                    if (negative) RESULT_OUT_OF_RANGE_ERROR else RESULT_TOO_LARGE_ERROR
+                )
             }
             return mantissa.scaleByPowerOfTen(exponent)
         }
@@ -1116,8 +1265,8 @@ object CalculatorDisplayMemory {
             }
             if (function in COORDINATE_FUNCTIONS) {
                 check(arguments.size == 2) { "$function requires two arguments" }
-                val first = arguments[0].toDouble()
-                val second = arguments[1].toDouble()
+                val first = requireSupportedDouble(arguments[0])
+                val second = requireSupportedDouble(arguments[1])
                 val usesDegrees = ModeSettingsMemory.usesDegrees()
                 val result = when (function) {
                     RECTANGULAR_TO_RADIUS -> Math.hypot(first, second)
@@ -1192,8 +1341,8 @@ object CalculatorDisplayMemory {
             }
             if (function == LOG_BASE_FUNCTION) {
                 check(arguments.size == 2) { "logBASE requires two arguments" }
-                val value = arguments[0].toDouble()
-                val base = arguments[1].toDouble()
+                val value = requireSupportedDouble(arguments[0])
+                val base = requireSupportedDouble(arguments[1])
                 check(value > 0.0 && base > 0.0 && base != 1.0) {
                     "logBASE requires a positive value and positive base other than 1"
                 }
@@ -1207,8 +1356,8 @@ object CalculatorDisplayMemory {
                     if (function == INDEXED_ROOT_FUNCTION) arguments[1] else arguments[0]
                 val rootArgument =
                     if (function == INDEXED_ROOT_FUNCTION) arguments[0] else arguments[1]
-                val value = valueArgument.toDouble()
-                val root = rootArgument.toDouble()
+                val value = requireSupportedDouble(valueArgument)
+                val root = requireSupportedDouble(rootArgument)
                 check(root != 0.0) { "nthRoot index cannot be zero" }
                 val result = if (value < 0.0) {
                     val integerRoot = rootArgument.intValueExact()
@@ -1222,7 +1371,7 @@ object CalculatorDisplayMemory {
             }
             if (function == CUBE_ROOT_FUNCTION) {
                 check(arguments.size == 1) { "cubeRoot requires one argument" }
-                val result = Math.cbrt(arguments.single().toDouble())
+                val result = Math.cbrt(requireSupportedDouble(arguments.single()))
                 check(result.isFinite()) { "Function result is outside the supported range" }
                 return BigDecimal.valueOf(normalizeCoordinateResult(result))
             }
@@ -1247,8 +1396,15 @@ object CalculatorDisplayMemory {
 
             check(arguments.size == 1) { "$function requires one argument" }
             val argument = arguments.single()
-            val value = argument.toDouble()
             val usesDegrees = ModeSettingsMemory.usesDegrees()
+            exactForwardTrig(function, argument, usesDegrees)?.let {
+                return BigDecimal.valueOf(it)
+            }
+            exactInverseTrig(function, argument, usesDegrees)?.let {
+                return BigDecimal.valueOf(it)
+            }
+
+            val value = requireSupportedDouble(argument)
             val angle = if (usesDegrees) Math.toRadians(value) else value
             val result = when (function) {
                 "sin" -> Math.sin(angle)
@@ -1262,9 +1418,8 @@ object CalculatorDisplayMemory {
                 SQUARE_ROOT -> Math.sqrt(value)
                 else -> error("Unsupported calculator function: $function")
             }
-            val normalizedResult = normalizeDegreeTrigIdentity(function, argument, result, usesDegrees)
-            check(normalizedResult.isFinite()) { "Function result is outside the supported range" }
-            return BigDecimal.valueOf(normalizedResult)
+            check(result.isFinite()) { "Function result is outside the supported range" }
+            return BigDecimal.valueOf(result)
         }
 
         private fun decimalPlaceCount(value: BigDecimal): Int {
@@ -1318,30 +1473,113 @@ object CalculatorDisplayMemory {
         private fun inverseAngle(radians: Double, usesDegrees: Boolean): Double =
             if (usesDegrees) Math.toDegrees(radians) else radians
 
-        private fun normalizeDegreeTrigIdentity(
+        private fun exactForwardTrig(
             function: String,
-            degrees: BigDecimal,
-            result: Double,
+            argument: BigDecimal,
             usesDegrees: Boolean
-        ): Double {
-            if (!usesDegrees || function !in TRIG_FUNCTIONS) return result
-            val (quarterTurns, remainder) = degrees.divideAndRemainder(QUARTER_TURN_DEGREES)
-            if (remainder.compareTo(BigDecimal.ZERO) != 0) return result
-            val quadrant = Math.floorMod(quarterTurns.remainder(FOUR).toInt(), 4)
-
+        ): Double? {
+            if (function !in TRIG_FUNCTIONS) return null
+            val degrees = specialAngleDegrees(argument, usesDegrees) ?: return null
             return when (function) {
-                "sin" -> when (quadrant) {
-                    1 -> 1.0
-                    3 -> -1.0
-                    else -> 0.0
+                "sin" -> when (degrees) {
+                    0, 180 -> 0.0
+                    30, 150 -> 0.5
+                    45, 135 -> SQRT_TWO_OVER_TWO
+                    60, 120 -> SQRT_THREE_OVER_TWO
+                    90 -> 1.0
+                    210, 330 -> -0.5
+                    225, 315 -> -SQRT_TWO_OVER_TWO
+                    240, 300 -> -SQRT_THREE_OVER_TWO
+                    270 -> -1.0
+                    else -> null
                 }
-                "cos" -> when (quadrant) {
+                "cos" -> when (degrees) {
                     0 -> 1.0
-                    2 -> -1.0
-                    else -> 0.0
+                    30, 330 -> SQRT_THREE_OVER_TWO
+                    45, 315 -> SQRT_TWO_OVER_TWO
+                    60, 300 -> 0.5
+                    90, 270 -> 0.0
+                    120, 240 -> -0.5
+                    135, 225 -> -SQRT_TWO_OVER_TWO
+                    150, 210 -> -SQRT_THREE_OVER_TWO
+                    180 -> -1.0
+                    else -> null
                 }
-                "tan" -> if (quadrant % 2 == 0) 0.0 else result
-                else -> result
+                "tan" -> when (degrees) {
+                    90, 270 -> throw CalculatorEvaluationException(DOMAIN_ERROR)
+                    0, 180 -> 0.0
+                    30, 210 -> ONE_OVER_SQRT_THREE
+                    45, 225 -> 1.0
+                    60, 240 -> SQRT_THREE
+                    120, 300 -> -SQRT_THREE
+                    135, 315 -> -1.0
+                    150, 330 -> -ONE_OVER_SQRT_THREE
+                    else -> null
+                }
+                else -> null
+            }
+        }
+
+        private fun exactInverseTrig(
+            function: String,
+            argument: BigDecimal,
+            usesDegrees: Boolean
+        ): Double? {
+            val identities = when (function) {
+                INVERSE_SINE -> listOf(
+                    -1.0 to -90,
+                    -SQRT_THREE_OVER_TWO to -60,
+                    -SQRT_TWO_OVER_TWO to -45,
+                    -0.5 to -30,
+                    0.0 to 0,
+                    0.5 to 30,
+                    SQRT_TWO_OVER_TWO to 45,
+                    SQRT_THREE_OVER_TWO to 60,
+                    1.0 to 90
+                )
+                INVERSE_COSINE -> listOf(
+                    -1.0 to 180,
+                    -SQRT_THREE_OVER_TWO to 150,
+                    -SQRT_TWO_OVER_TWO to 135,
+                    -0.5 to 120,
+                    0.0 to 90,
+                    0.5 to 60,
+                    SQRT_TWO_OVER_TWO to 45,
+                    SQRT_THREE_OVER_TWO to 30,
+                    1.0 to 0
+                )
+                INVERSE_TANGENT -> listOf(
+                    -SQRT_THREE to -60,
+                    -1.0 to -45,
+                    -ONE_OVER_SQRT_THREE to -30,
+                    0.0 to 0,
+                    ONE_OVER_SQRT_THREE to 30,
+                    1.0 to 45,
+                    SQRT_THREE to 60
+                )
+                else -> return null
+            }
+            val degrees = identities.firstOrNull { (knownValue, _) ->
+                argument.subtract(BigDecimal.valueOf(knownValue)).abs() <=
+                    INVERSE_IDENTITY_TOLERANCE
+            }?.second ?: return null
+            return if (usesDegrees) degrees.toDouble() else Math.toRadians(degrees.toDouble())
+        }
+
+        private fun specialAngleDegrees(argument: BigDecimal, usesDegrees: Boolean): Int? {
+            if (usesDegrees) {
+                var normalized = argument.remainder(FULL_TURN_DEGREES)
+                if (normalized.signum() < 0) normalized = normalized.add(FULL_TURN_DEGREES)
+                return SPECIAL_ANGLE_DEGREES.firstOrNull {
+                    normalized.compareTo(BigDecimal.valueOf(it.toLong())) == 0
+                }
+            }
+
+            val normalized =
+                ((Math.toDegrees(requireSupportedDouble(argument)) % 360.0) + 360.0) % 360.0
+            return SPECIAL_ANGLE_DEGREES.firstOrNull {
+                kotlin.math.abs(normalized - it) <= RADIAN_ANGLE_TOLERANCE_DEGREES ||
+                    kotlin.math.abs(normalized - it - 360.0) <= RADIAN_ANGLE_TOLERANCE_DEGREES
             }
         }
     }

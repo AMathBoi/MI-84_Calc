@@ -15,7 +15,7 @@ snapshot of the implementation; `BUTTON_MATRIX.md` is the maintainer-facing beha
 | `Y=` | Y= equation editor (Y1–Y9) | Implemented | STAT PLOT | Deferred | F1 FRAC function menu | Implemented |
 | `Window` | Graph-window editor | Implemented | TBLSET | Deferred | F2 FUNC function menu | Partial |
 | `Zoom` | Zoom and memory menu | Implemented | FORMAT | Deferred | F3 MTRX menu | Deferred |
-| `Trace` | Graph trace | Implemented | CALC graph-analysis menu | Deferred | F4 YVAR menu | Deferred |
+| `Trace` | Graph trace | Implemented | CALC graph-analysis menu | Deferred | F4 YVAR menu | Implemented |
 | `Graph` | Graph view | Implemented | TABLE view | Deferred | F5 special menu | Deferred |
 | `2nd` | One-shot 2nd modifier | Implemented | Cancel 2nd | Implemented | Switch Alpha to 2nd | Implemented |
 | `Mode` | Persistent Mode editor | Implemented | Quit to Home | Implemented | No shifted function | Not implemented |
@@ -23,14 +23,14 @@ snapshot of the implementation; `BUTTON_MATRIX.md` is the maintainer-facing beha
 | `Down` | Move/select down | Implemented | No shifted function | Not implemented | No shifted function | Not implemented |
 | `Up` | Move/select up | Implemented | No shifted function | Not implemented | No shifted function | Not implemented |
 | `Alpha` | One-shot Alpha modifier | Implemented | A-LOCK | Implemented | Cancel Alpha | Implemented |
-| `X,T,θ,n` | Insert graph variable `X` | Implemented | LINK Send/Receive | Deferred | Fraction-template shortcut | Deferred |
+| `X,T,θ,n` | Insert graph variable `X` | Implemented | LINK Send/Receive | Deferred | Fraction-template shortcut | Implemented |
 | `Stat` | Statistics menu | Deferred | List names/operations/math | Deferred | No shifted function | Not implemented |
 | `Left` | Move/select left | Implemented | No shifted function | Not implemented | No shifted function | Not implemented |
 | `Right` | Move/select right | Implemented | No shifted function | Not implemented | No shifted function | Not implemented |
 | `Math` | MATH/NUM/CMPLX/PROB/FRAC menu | Partial | TEST/LOGIC/CONDITIONS menu | Partial | Insert `A` / Zoom shortcut | Implemented |
 | `Apps` | Applications menu | Deferred | ANGLE menu | Partial | Insert `B` / Zoom shortcut | Implemented |
 | `Prgm` | Program menu | Deferred | DRAW/POINTS/STO menu | Deferred | Insert `C` / Zoom shortcut | Implemented |
-| `Vars` | VARS/Y-VARS menu | Deferred | DISTR/DRAW menu | Deferred | No shifted function | Not implemented |
+| `Vars` | Window/Zoom/Y-VARS menu | Partial | DISTR/DRAW menu | Deferred | No shifted function | Not implemented |
 | `Clear` | Clear active editor or cancel operation | Implemented | No shifted function | Not implemented | No shifted function | Not implemented |
 | `x⁻¹` | Reciprocal | Implemented | MATRIX menu | Deferred | Insert `D` / Zoom shortcut | Implemented |
 | `sin` | `sin(` | Implemented | `sin⁻¹(` | Implemented | Insert `E` / Zoom shortcut | Implemented |
@@ -65,12 +65,12 @@ snapshot of the implementation; `BUTTON_MATRIX.md` is the maintainer-facing beha
 
 | Feature area | Current status | What is available now | What remains unavailable or deferred |
 |---|---|---|---|
-| Core calculation | Implemented | Arithmetic, powers, reciprocal, parentheses, implicit multiplication, `Ans`, `π`, `e`, `i`, scientific notation, real/complex calculation, and history | Some exact results can show floating-point residue |
+| Core calculation | Implemented | Arithmetic, powers, reciprocal, parentheses, implicit multiplication, `Ans`, `π`, `e`, `i`, scientific notation capped at ±308, normalized common trig identities, real/complex calculation, and history | General floating-point functions remain limited to Double precision |
 | Functions | Partial | Trig/inverse trig, logs, roots, `abs`, `round`, integer helpers, `min`, `max`, `gcd`, `lcm`, remainder, `nPr`, `nCr`, factorial | Numerical calculus, solver, broader complex functions, and random generators |
 | Fractions | Partial | Stacked fractions, mixed numbers, exact fractional Home results, fraction editing | Fraction/decimal and improper/mixed conversions |
 | Variables | Implemented | Persistent A–Z and `θ` scalar variables, scalar storage, `X` graph coordinate | List, matrix, string, program, and broader variable menus |
 | Graphing | Implemented | Y= editor, Window editor, colored graphing, trace, zoom presets, zoom memory, box and cursor zoom | Tables, graph analysis/CALC, statistical plots, drawing, and polar/sequence graph types |
-| Menus | Partial | TEST/LOGIC, part of ANGLE, and reviewed MATH-family rows; FRAC/FUNC overlays | CONDITIONS templates, DMS, MTRX/YVAR overlays, APPS, STAT, PRGM, VARS, DISTR, MATRIX, and MEM |
-| Editing | Partial | Forward delete, cursor movement, insert mode, ENTRY history recall, A-LOCK | Insert-mode visual indicator; some shifted Y= editor input paths |
+| Menus | Partial | TEST/LOGIC, part of ANGLE, reviewed MATH-family rows, nested Window/Zoom/Y-VARS, and FRAC/FUNC/YVAR overlays | CONDITIONS templates, DMS, MTRX, APPS, STAT, PRGM, broader VARS domains, DISTR, MATRIX, and MEM |
+| Editing | Partial | Forward delete, cursor movement, sign editing in Home/Y=/Window, insert mode, ENTRY history recall, A-LOCK | Insert-mode visual indicator |
 | Persistence | Implemented | Calculation history, scalar variables, Y= equations, Window/Mode settings, and zoom memory | Calculator overlay position across game restarts |
 | Inventory integration | Implemented | Draggable inventory overlay, X-button toggle, configurable `N`/`H`/`K` controls | More complete resizing and configurable placement |

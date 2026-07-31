@@ -50,7 +50,7 @@ records the prerequisite subsystem and confirms the visual gate without repeatin
 | RCL | The typed variable domains offered by the prompt | Review selection, unavailable types, and insertion behavior |
 | MEM | Persistence ownership and recovery behavior for each item | Review reporting, confirmation, destructive, archive, and grouping flows separately |
 | OFF/ON | LCD power state distinct from overlay visibility | Review wake, cancellation, header, and inventory reopen behavior |
-| F1/F2/F3 and Alpha fraction template | Approved token/template primitives; matrices for F3 | F1/F2 overlay and FRAC templates reviewed and implemented; F3/F4 and direct Alpha fraction shortcut remain separately gated |
+| F1/F2/F3/F4 and Alpha fraction template | Approved token/template primitives; matrices for F3 | F1/F2/F4 and the direct Alpha fraction shortcut are implemented; F3 remains gated on matrix support |
 | F5 SPECIAL | A specific implemented context such as graph interaction or program editing | Define that context's exact items here, then review it before implementation |
 | Numeric Solver / Alpha Enter SOLVE | Solver domain and reviewed Numeric Solver screen | SOLVE remains unavailable outside the solver |
 
@@ -89,7 +89,7 @@ records the prerequisite subsystem and confirms the visual gate without repeatin
 | `0`–`9` | Insert digits. In an existing menu, physical numeric hotkeys may select items. |
 | `+`, `−`, `×`, `÷`, `^` | Insert binary operators. Empty Home input begins an `Ans` expression where supported. |
 | `.` | Inserts a decimal point. |
-| `(−)` | Toggles the sign of the current operand; it is not the subtraction operator. |
+| `(−)` | Toggles the sign of the current operand in Home, Y=, and Window; it is not the subtraction operator. |
 | `(` and `)` | Insert grouping parentheses. |
 | `,` | Inserts a comma. It separates arguments in the implemented scalar functions; unsupported function families remain deferred. |
 | `x²` | Squares the current operand or `Ans`. |
@@ -143,6 +143,20 @@ is documented here and deferred according to `BUTTON_MATRIX.md`.
 STAT opens a three-tab statistics menu.
 
 #### EDIT
+
+The reviewed Phase 5 STAT slice opens the tabbed STAT menu. Its EDIT tab enables `1:Edit...` and
+keeps SortA, SortD, ClrList, and SetUpEditor visibly unavailable. Edit shows all six lists through
+a three-column horizontal viewport, ending at `L4`–`L6`. Rows scroll only through each selected
+list's next-empty `_` cell. The original header spacing is retained, and a
+small gap separates the gray header divider from the first row; vertical dividers separate the
+visible list columns. A full table-row clearance prevents the lowest highlight from reaching the
+bottom `Ln(row)=entry` line. Moving Up from a first-row cell selects its list header and loads a
+literal such as `L1={2,2,2}` into the bottom entry line. The first Enter on a selected header locks
+the bottom line for normal cursor editing; a subsequent Enter replaces the list when the literal is
+valid, clears it when the entry is empty, and restores the prior literal on syntax error. Enter from
+a normal cell evaluates a real scalar expression and advances one row. The table formats the result
+using the active display settings without discarding its full stored precision. Complex cell editing
+and the remaining STAT menu items remain deferred.
 
 | Item | Behavior |
 |---|---|
@@ -311,11 +325,21 @@ Inside a future program editor it changes to command tabs:
 VARS opens variable-selection menus and pastes the chosen typed variable into the active editor.
 
 - **VARS** categories: Window, Zoom, GDB, Picture, Image, String, Table, and Statistics.
-- **Y-VARS** categories: Function (`Y1`–`Y9`, `Y0`), Parametric, Polar, On/Off, and future
-  sequence/background categories.
+  - **Window** contains its own `X/Y`, `T/θ`, and `U/V/W` tabs. `X/Y` currently provides
+    `1:Xmin`, `2:Xmax`, `3:Xscl`, `4:Ymin`, `5:Ymax`, `6:Yscl`, `7:Xres`, `8:ΔX`,
+    `9:ΔY`, `0:XFact`, `A:YFact`, and `B:TraceStep`, in that order. `ΔY`, `XFact`, and
+    `YFact` are visible but unavailable until their owning behavior is defined. The entire `T/θ`
+    and `U/V/W` tabs are deferred.
+  - **Zoom** contains its own `ZX/ZY`, `ZT/Zθ`, and `ZU` tabs. `ZX/ZY` currently provides
+    `ZXmin`, `ZXmax`, `ZXscl`, `ZYmin`, `ZYmax`, `ZYscl`, and `ZXres`. It deliberately does
+    not include `ZΔX` or `ZTraceStep`. `ZT/Zθ` and `ZU` are deferred.
+  - GDB, Picture, Image, String, Table, and Statistics remain visible but unavailable.
+- **Y-VARS** categories: Function, Parametric, Polar, On/Off, Sequence, and Background.
+  Function provides `Y1`–`Y9`. The other categories remain deferred with their graph modes.
 
-Initially, only variables backed by existing MI-84 memory should be selectable. Unimplemented
-variable types may be shown as unavailable after the menu receives visual approval.
+Available Window, Zoom, and function variables paste a readable typed token into Home, Y=, or
+Window and resolve through their backing memory during evaluation. Clear from a nested category
+returns to the parent VARS/Y-VARS menu before closing it.
 
 ## 2nd layer
 
@@ -402,6 +426,31 @@ hotkeys, and direct view exits remain physical controls while locked.
 This remains deferred until MI-84 has a defined local or remote transfer mechanism.
 
 #### 2nd Stat: LIST
+
+The reviewed LIST compact menu uses `NAMES`, `OPS`, and `MATH` tabs. NAMES exposes active built-in
+`L1`–`L6` insertion; OPS supports correlated multi-list SortA/SortD, dim, Fill, both compact and
+calculator-style seq forms, cumSum, ΔList, and augment, while MATH supports min, max, mean, median,
+sum, prod, stdDev, and variance. Sort reorders every dependent list using the primary list's
+permutation, and Fill updates an existing named list. User-defined list names created in STAT→Edit
+appear after the built-ins as dynamic NAMES rows. Select remains deferred with interactive
+statistics/plots; list/matrix conversions remain deferred to Phase 8.
+
+LIST function entries are whole forward-editor tokens and use the standard omitted-final-parenthesis
+completion: for example, `min(L1` submits as `min(L1)`.
+
+When a list-table header is selected, `2nd` + Del opens a temporary `_` header immediately to its
+left. Alpha keys supply an uppercase name of up to five characters; Enter creates the persistent
+empty list. Clear cancels the temporary tab. The named list then behaves like a built-in list in the
+editor, LIST NAMES menu, and exact Home evaluation. Named-list references are distinct from Alpha
+scalars: a list named `A` is stored as a dedicated list token and rendered in Home with an `L`
+prefix beside its name (`LA`), while Alpha `A` remains the scalar variable. LIST NAMES always shows
+user-defined lists after `L1`–`L6`.
+
+An exact built-in list reference submitted in Home displays as compact space-separated braces, such
+as `L1` → `{8 6}`. A literal entered with `2nd` + `(` / `)` evaluates scalar elements in the same
+form, for example `{2+2,3*2}` → `{4 6}`. STAT→Edit cells accept real scalar expressions such as
+`sin(`, constants, variables, and arithmetic; only the formatted cell text is rounded, while the
+evaluated value retains full internal precision.
 
 **NAMES** contains `L1`–`L6` and user-defined list names.
 
@@ -536,10 +585,10 @@ approved roots use nonlinear LCD notation; the other rows retain the status reco
 
 | Physical key | 2nd result | Use |
 |---|---|---|
-| sin / cos / tan | `sin⁻¹(` / `cos⁻¹(` / `tan⁻¹(` | Inverse trig using Degree or Radian mode. Real-domain failures use principal complex values only in `a+bi` mode. |
+| sin / cos / tan | `sin⁻¹(` / `cos⁻¹(` / `tan⁻¹(` | Inverse trig using Degree or Radian mode. Common 30°/45°/90° families and equivalent radian values use deterministic forward/inverse identities; tangent at odd multiples of 90° reports `Error: Domain`. Complex-valued inverse domains use principal values only in `a+bi` mode. |
 | ^ | `π` | Inserts the pi constant and supports implicit multiplication such as `2π`. |
 | x² | `sqrt(` | Inserts a principal square-root function displayed as an adaptive radical; negative real inputs require `a+bi`. |
-| comma | `EE` | Appends to a completed decimal mantissa, such as `1.2EE5`. `(−)` negates the exponent; malformed or excessively large exponents report an error. |
+| comma | `EE` | Appends to a completed decimal mantissa, such as `1.2EE5`. `(−)` negates the exponent. Exponents are limited to `-308..308`; overflow reports `Error: Result too large`, while nonzero underflow reports `Error: Result out of range`. |
 | `(` / `)` | `{` / `}` | Opens/closes a list literal after list support exists. |
 | ÷ | `e` | Inserts Euler's constant and supports implicit multiplication. |
 | log | `10^(` | Inserts base-10 exponential; its omitted trailing parenthesis is completed on evaluation. |
@@ -555,7 +604,7 @@ approved roots use nonlinear LCD notation; the other rows retain the status reco
 
 ### F1–F5 function menus
 
-F1 and F2 use an approved function-menu overlay rather than the full-view compact menu used by
+F1, F2, and F4 use an approved function-menu overlay rather than the full-view compact menu used by
 TEST and ANGLE. The active calculator view remains visible behind a boxed option list. The active
 tab is shown along the bottom beside `FRAC`, `FUNC`, `MTRX`, and `YVAR`; Left and Right switch tabs.
 The option box grows with the active tab, so FRAC leaves most of the underlying view visible while
@@ -564,7 +613,7 @@ FUNC uses most of the LCD.
 Home supports all four tabs. F1/F2 opened from another typeable view, currently Y= or Window, remain
 over that view and paste into its active editor. Opening them from a non-typeable view first returns
 to Home. `2nd` + Mode (Quit) closes this overlay without leaving its retained Home, Y=, or Window
-view. F3 MTRX and F4 YVAR remain visible tab placeholders until their later implementation.
+view. F3 MTRX remains a visible tab placeholder until matrix support is implemented.
 
 - **F1 FRAC**: fraction and mixed-number templates are available. The improper/mixed and
   fraction/decimal conversion rows remain visible but unavailable. Template entry uses stacked
@@ -589,11 +638,15 @@ view. F3 MTRX and F4 YVAR remain visible tab placeholders until their later impl
   combinations, and factorial are available. Numerical derivative, numerical integral, and
   summation remain visible but unavailable.
 - **F3 MTRX**: quick MathPrint matrix templates with selectable row and column counts.
-- **F4 YVAR**: function variables such as `Y1`–`Y9` and `Y0`.
+- **F4 YVAR**: a two-column function-variable menu, with `1`–`5` in the left column and `6`–`9`
+  in the right. `Y1`–`Y9` paste distinct subscripted `Y₁`–`Y₉` function-reference tokens. Legacy
+  persisted raw `Y1`–`Y9` references still load, while typing a digit after scalar `Y` inserts
+  explicit multiplication and cannot silently select a graph function.
 - **F5 SPECIAL**: context-sensitive commands for an interactive graph, drawing operation, or program
   editor. It has no global fixed contents and does nothing where no special menu is available.
 
-Alpha X,T,θ,n remains deferred as a separate direct fraction-template shortcut.
+Alpha X,T,θ,n directly opens the same `n/d` structured fraction editor used by F1. It retains
+Home, Y=, or Window as its insertion target; other origins return to Home first.
 
 ### Letters and symbols
 

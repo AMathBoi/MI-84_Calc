@@ -17,6 +17,7 @@ import net.amathboi.mi84mod.client.calculator.input.CalculatorInputEvent
 import net.amathboi.mi84mod.client.calculator.input.CalculatorKey
 import net.amathboi.mi84mod.client.calculator.input.ModifierLayer
 import net.amathboi.mi84mod.client.calculator.ui.CalculatorView
+import net.amathboi.mi84mod.client.calculator.ui.CompactMenuId
 import net.amathboi.mi84mod.client.calculator.ui.FunctionMenuTab
 
 class CalculatorRegressionTest {
@@ -28,6 +29,8 @@ class CalculatorRegressionTest {
         resetYEqualsMemory()
         WindowSettingsMemory.restore(DEFAULT_WINDOW)
         setField(WindowSettingsMemory, "selectedIndex", 0)
+        setField(ZoomMemory, "storedWindow", null)
+        setField(ZoomMemory, "previousWindow", null)
     }
 
     @AfterTest
@@ -37,6 +40,7 @@ class CalculatorRegressionTest {
         Files.deleteIfExists(TEST_CONFIG.resolve("mi84_calc_window_settings.txt"))
         Files.deleteIfExists(TEST_CONFIG.resolve("mi84_calc_y_equals_memory.txt"))
         Files.deleteIfExists(TEST_CONFIG.resolve("mi84_calc_scalar_variables.txt"))
+        Files.deleteIfExists(TEST_CONFIG.resolve("mi84_calc_zoom_memory.txt"))
         Files.deleteIfExists(TEST_CONFIG.resolve("atomic-test.txt"))
     }
 
@@ -176,6 +180,41 @@ class CalculatorRegressionTest {
     }
 
     @Test
+    fun graphSamplingBreaksAtUndefinedOrPoleLikeMidpoints() {
+        assertTrue(
+            GraphNavigationMath.shouldConnectSamples(
+                0.0,
+                0.0,
+                1.0,
+                100.0,
+                -10.0,
+                10.0
+            ) { x -> x * 100.0 }
+        )
+        assertFalse(
+            GraphNavigationMath.shouldConnectSamples(
+                1.4893617021276597,
+                12.25263201580879,
+                1.7021276595744688,
+                -7.570501652965523,
+                -10.0,
+                10.0,
+                Math::tan
+            )
+        )
+        assertFalse(
+            GraphNavigationMath.shouldConnectSamples(
+                -1.0,
+                -1.0,
+                1.0,
+                1.0,
+                -10.0,
+                10.0
+            ) { null }
+        )
+    }
+
+    @Test
     fun atomicPersistenceKeepsLastGoodFileWhenTheNextSaveFails() {
         val stateFile = TEST_CONFIG.resolve("atomic-test.txt")
         CalculatorPersistence.save(stateFile) { listOf("last-good") }
@@ -226,6 +265,54 @@ class CalculatorRegressionTest {
     }
 
     @Test
+    fun commonDegreeTrigAndInverseTrigIdentitiesAreDeterministic() {
+        selectDegreeMode()
+        listOf(
+            "sin(30)" to "0.5",
+            "sin(45)" to "0.7071067811865476",
+            "sin(90)" to "1",
+            "cos(30)" to "0.8660254037844386",
+            "cos(45)" to "0.7071067811865476",
+            "cos(90)" to "0",
+            "tan(30)" to "0.5773502691896258",
+            "tan(45)" to "1",
+            "tan(60)" to "1.7320508075688772",
+            "tan(90)" to "Error: Domain",
+            "tan(270)" to "Error: Domain",
+            "sin(-90)" to "-1",
+            "cos(-90)" to "0",
+            "tan(-90)" to "Error: Domain",
+            "sin⁻¹(0.5)" to "30",
+            "sin⁻¹(1)" to "90",
+            "cos⁻¹(-0.5)" to "120",
+            "cos⁻¹(0)" to "90",
+            "tan⁻¹(1)" to "45",
+            "sin⁻¹(sin(45))" to "45",
+            "cos⁻¹(cos(45))" to "45",
+            "tan⁻¹(tan(45))" to "45"
+        ).forEach { (expression, expected) ->
+            submitRaw(expression)
+            assertEquals(expected, CalculatorDisplayMemory.allSubmitted().last().result)
+        }
+
+        selectRectangularComplexMode()
+        submitRaw("tan(90)")
+        assertEquals("Error: Domain", CalculatorDisplayMemory.allSubmitted().last().result)
+    }
+
+    @Test
+    fun commonRadianTrigIdentitiesNormalizePiExpressions() {
+        listOf(
+            "sin(π)" to "0",
+            "cos(π/2)" to "0",
+            "tan(π/4)" to "1"
+        ).forEach { (expression, expected) ->
+            submitRaw(expression)
+            assertEquals(expected, CalculatorDisplayMemory.allSubmitted().last().result)
+        }
+    }
+
+    @Test
     fun phaseOneSecondMappingsInsertTypedTokensAndConsumeTheModifier() {
         val controller = CalculatorController()
         val mappings = listOf(
@@ -270,6 +357,30 @@ class CalculatorRegressionTest {
         controller.dispatch(CalculatorInputEvent(CalculatorKey.SECOND))
         controller.dispatch(CalculatorInputEvent(CalculatorKey.SIN))
         assertEquals("-10sin⁻¹(", WindowSettingsMemory.value(0))
+    }
+
+    @Test
+    fun negativeKeyTogglesTheActiveOperandInYEqualsAndWindow() {
+        val controller = CalculatorController()
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.Y_EQUALS))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_5))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.NEGATIVE))
+        assertEquals("-5", YEqualsMemory.equation(0))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.NEGATIVE))
+        assertEquals("5", YEqualsMemory.equation(0))
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.WINDOW))
+        WindowSettingsMemory.clearSelected()
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_5))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.NEGATIVE))
+        assertEquals("-5", WindowSettingsMemory.value(0))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.NEGATIVE))
+        assertEquals("5", WindowSettingsMemory.value(0))
+
+        WindowSettingsMemory.clearSelected()
+        WindowSettingsMemory.append("1EE")
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.NEGATIVE))
+        assertEquals("1EE-", WindowSettingsMemory.value(0))
     }
 
     @Test
@@ -474,6 +585,31 @@ class CalculatorRegressionTest {
         CalculatorDisplayMemory.appendDigit('3')
         CalculatorDisplayMemory.submit()
         assertEquals("1E3", CalculatorDisplayMemory.allSubmitted().last().result)
+    }
+
+    @Test
+    fun scientificAndFunctionRangesRejectOverflowAndUnderflow() {
+        submitRaw("1EE-309")
+        assertEquals("Error: Result out of range", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        submitRaw("1EE309")
+        assertEquals("Error: Result too large", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        submitRaw("sqrt(1EE308*10)")
+        assertEquals("Error: Result too large", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        submitRaw("sqrt(1EE-308)")
+        assertEquals("1E-154", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        submitRaw("sqrt((1EE-308)^3)")
+        assertEquals("Error: Result out of range", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        selectRectangularComplexMode()
+        submitRaw("sqrt((1EE-308)^3)")
+        assertEquals("Error: Result out of range", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        submitRaw("1EE-309i")
+        assertEquals("Error: Result out of range", CalculatorDisplayMemory.allSubmitted().last().result)
     }
 
     @Test
@@ -1224,6 +1360,151 @@ class CalculatorRegressionTest {
     }
 
     @Test
+    fun varsUsesNestedWindowAndZoomTabsWithDeferredSiblingDomains() {
+        val controller = CalculatorController()
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.VARS))
+        val menu = controller.state.compactMenu!!
+        assertEquals(CompactMenuId.VARS, menu.currentDefinition.id)
+        assertEquals(listOf("VARS", "Y-VARS"), menu.currentDefinition.tabs.map { it.label })
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ENTER))
+        assertEquals(CompactMenuId.VARS_WINDOW, menu.currentDefinition.id)
+        assertEquals(listOf("X/Y", "T/θ", "U/V/W"), menu.currentDefinition.tabs.map { it.label })
+        assertEquals(
+            listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "A", "B"),
+            menu.selectedTab.items.map { it.hotkey }
+        )
+        assertEquals(
+            listOf(
+                "Xmin",
+                "Xmax",
+                "Xscl",
+                "Ymin",
+                "Ymax",
+                "Yscl",
+                "Xres",
+                "ΔX",
+                "ΔY",
+                "XFact",
+                "YFact",
+                "TraceStep"
+            ),
+            menu.selectedTab.items.map { it.label }
+        )
+        assertFalse(menu.selectedTab.items[8].available)
+        assertFalse(menu.selectedTab.items[9].available)
+        assertFalse(menu.selectedTab.items[10].available)
+        assertTrue(menu.selectedTab.items[11].available)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.CLEAR))
+        assertEquals(CompactMenuId.VARS, menu.currentDefinition.id)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_2))
+        assertEquals(CompactMenuId.VARS_ZOOM, menu.currentDefinition.id)
+        assertEquals(listOf("ZX/ZY", "ZT/Zθ", "ZU"), menu.currentDefinition.tabs.map { it.label })
+        assertEquals(
+            listOf("ZXmin", "ZXmax", "ZXscl", "ZYmin", "ZYmax", "ZYscl", "ZXres"),
+            menu.selectedTab.items.map { it.label }
+        )
+        assertTrue(menu.selectedTab.items.none { "ΔX" in it.label || "TraceStep" in it.label })
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.CLEAR))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_1))
+        assertEquals(CompactMenuId.Y_VARS_FUNCTION, menu.currentDefinition.id)
+        assertEquals((1..9).map { "Y$it" }, menu.selectedTab.items.map { it.label })
+        assertTrue(menu.selectedTab.items.none { it.hotkey == "0" })
+    }
+
+    @Test
+    fun varsSelectionsInsertBackedValuesAndRejectDeferredRows() {
+        val controller = CalculatorController()
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.VARS))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ENTER))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_9))
+        assertEquals(CompactMenuId.VARS_WINDOW, controller.state.compactMenu!!.currentDefinition.id)
+        assertEquals("", CalculatorDisplayMemory.current())
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ALPHA))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.APPS))
+        assertEquals("TraceStep", CalculatorDisplayMemory.current())
+        assertEquals(
+            5.0 / 33.0,
+            CalculatorDisplayMemory.evaluateForGraph("TraceStep", 0.0)
+        )
+        CalculatorDisplayMemory.submit()
+        assertEquals(
+            "0.1515151515151515151515151515151515",
+            CalculatorDisplayMemory.allSubmitted().last().result
+        )
+
+        WindowSettingsMemory.restore(listOf("-4", "8", "2", "-3", "9", "3", "1", "0.25", "0.5"))
+        ZoomMemory.storeCurrent()
+        WindowSettingsMemory.restore(DEFAULT_WINDOW)
+        submitRaw("ZXmin+ZYmax")
+        assertEquals("5", CalculatorDisplayMemory.allSubmitted().last().result)
+    }
+
+    @Test
+    fun f4YVarUsesTwoColumnNavigationWithoutY0() {
+        val controller = CalculatorController()
+        dispatchAlpha(controller, CalculatorKey.TRACE)
+        val menu = controller.state.functionMenu!!
+        assertEquals(FunctionMenuTab.YVAR, menu.selectedTab)
+        assertEquals(9, menu.items.size)
+        assertEquals((1..9).map { it.toString() }, menu.items.map { it.hotkey })
+        assertTrue(menu.items.all { it.available })
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        assertEquals(5, menu.selectedItemIndex)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DOWN))
+        assertEquals(6, menu.selectedItemIndex)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.LEFT))
+        assertEquals(1, menu.selectedItemIndex)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_0))
+        assertEquals(menu, controller.state.functionMenu)
+        assertEquals("", CalculatorDisplayMemory.current())
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_9))
+        assertEquals("Y₉", CalculatorDisplayMemory.current())
+        assertEquals(null, controller.state.functionMenu)
+    }
+
+    @Test
+    fun yFunctionVariablesEvaluateAtTheCurrentGraphCoordinateAndDetectCycles() {
+        YEqualsMemory.append("X+1")
+        assertEquals(4.0, CalculatorDisplayMemory.evaluateForGraph("Y1", 3.0))
+        assertEquals(4.0, CalculatorDisplayMemory.evaluateForGraph("Y₁", 3.0))
+
+        YEqualsMemory.select(1)
+        YEqualsMemory.append("2Y1")
+        assertEquals(8.0, CalculatorDisplayMemory.evaluateForGraph("Y2", 3.0))
+
+        YEqualsMemory.clearSelected()
+        YEqualsMemory.append("Y2")
+        assertEquals(null, CalculatorDisplayMemory.evaluateForGraph("Y2", 3.0))
+    }
+
+    @Test
+    fun scalarYFollowedByADigitCannotBecomeAYFunctionToken() {
+        CalculatorVariableMemory.set(CalculatorVariable.Y, BigDecimal("5"))
+        CalculatorDisplayMemory.appendVariable(CalculatorVariable.Y)
+        CalculatorDisplayMemory.appendDigit('1')
+        assertEquals("Y*1", CalculatorDisplayMemory.current())
+        CalculatorDisplayMemory.submit()
+        assertEquals("5", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        YEqualsMemory.append("X+1")
+        submitRaw(ExpressionEditingTokens.yFunctionToken(1))
+        assertEquals("1", CalculatorDisplayMemory.allSubmitted().last().result)
+        assertEquals(4.0, CalculatorDisplayMemory.evaluateForGraph("Y₁", 3.0))
+
+        YEqualsMemory.select(1)
+        YEqualsMemory.append("Y")
+        YEqualsMemory.appendDigit('2')
+        assertEquals("Y*2", YEqualsMemory.equation(1))
+    }
+
+    @Test
     fun quitClosesTheFunctionMenuWithoutLeavingItsEditableView() {
         val controller = CalculatorController()
         controller.dispatch(CalculatorInputEvent(CalculatorKey.Y_EQUALS))
@@ -1264,6 +1545,31 @@ class CalculatorRegressionTest {
 
         submitRaw("mixed(2,1,4)")
         assertEquals("9/4", CalculatorDisplayMemory.allSubmitted().last().result)
+    }
+
+    @Test
+    fun alphaVariableOpensTheDirectFractionTemplateInTheCorrectEditor() {
+        val controller = CalculatorController()
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.Y_EQUALS))
+        dispatchAlpha(controller, CalculatorKey.VARIABLE)
+
+        val template = controller.state.fractionTemplate!!
+        assertFalse(template.mixedNumber)
+        assertEquals(CalculatorView.Y_EQUALS, controller.state.view)
+        assertEquals(CalculatorView.Y_EQUALS, template.targetView)
+        assertEquals(ModifierLayer.NORMAL, controller.state.modifier)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_3))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_4))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        assertEquals("frac(3,4)", YEqualsMemory.equation(0))
+        assertEquals(null, controller.state.fractionTemplate)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.MODE))
+        dispatchAlpha(controller, CalculatorKey.VARIABLE)
+        assertEquals(CalculatorView.HOME, controller.state.view)
+        assertEquals(CalculatorView.HOME, controller.state.fractionTemplate!!.targetView)
     }
 
     @Test
@@ -1488,7 +1794,7 @@ class CalculatorRegressionTest {
         setField(ModeSettingsMemory, "selectedCategoryIndex", 0)
     }
 
-    private fun setField(target: Any, name: String, value: Any) {
+    private fun setField(target: Any, name: String, value: Any?) {
         field(target, name).set(target, value)
     }
 
