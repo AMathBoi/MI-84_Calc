@@ -4,6 +4,8 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import kotlin.math.ceil
 import kotlin.math.floor
+import kotlin.math.atan2
+import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -29,10 +31,24 @@ class CalculatorGraphRenderer(private val controller: CalculatorController) {
         }
 
         val tracing = controller.state.trace != null
-        val top = displayTop + if (tracing) DISPLAY_LINE_HEIGHT else 0
-        val bottom = displayBottom - if (tracing) DISPLAY_LINE_HEIGHT else 0
+        val top = displayTop + if (tracing && FormatSettingsMemory.showsExpressions()) {
+            DISPLAY_LINE_HEIGHT
+        } else {
+            0
+        }
+        val bottom = displayBottom - if (tracing && FormatSettingsMemory.showsCoordinates()) {
+            DISPLAY_LINE_HEIGHT
+        } else {
+            0
+        }
         if (tracing) renderTraceLabels(guiGraphics, left, right, displayTop, displayBottom, graphWindow)
-        renderGraphAxes(guiGraphics, left, right, top, bottom, graphWindow)
+        renderGraphGrid(guiGraphics, left, right, top, bottom, graphWindow)
+        if (FormatSettingsMemory.showsAxes()) {
+            renderGraphAxes(guiGraphics, left, right, top, bottom, graphWindow)
+        }
+        if (FormatSettingsMemory.showsLabels()) {
+            renderGraphAxisLabels(guiGraphics, left, right, top, bottom, graphWindow)
+        }
         repeat(YEqualsMemory.subscripts.size) { equationIndex ->
             val expression = YEqualsMemory.equation(equationIndex)
             if (expression.isNotEmpty()) {
@@ -101,28 +117,38 @@ class CalculatorGraphRenderer(private val controller: CalculatorController) {
     ) {
         val trace = controller.state.trace ?: return
         val color = YEqualsMemory.colors[trace.functionIndex]
-        val functionLabel =
-            "Y${YEqualsMemory.subscripts[trace.functionIndex]}=${YEqualsMemory.equation(trace.functionIndex)}"
-        CalculatorTextRenderer.draw(guiGraphics, functionLabel, left, displayTop, color)
+        if (FormatSettingsMemory.showsExpressions()) {
+            val functionLabel =
+                "Y${YEqualsMemory.subscripts[trace.functionIndex]}=${YEqualsMemory.equation(trace.functionIndex)}"
+            CalculatorTextRenderer.draw(guiGraphics, functionLabel, left, displayTop, color)
+        }
+
+        if (!FormatSettingsMemory.showsCoordinates()) return
 
         val footerY = displayBottom - DISPLAY_LINE_HEIGHT + TRACE_FOOTER_OFFSET
-        CalculatorTextRenderer.draw(
-            guiGraphics,
-            "X=${formatTraceValue(trace.x)}",
-            left,
-            footerY,
-            color
+        val graphY = CalculatorDisplayMemory.evaluateForGraph(
+            YEqualsMemory.equation(trace.functionIndex), trace.x
         )
-        val yLabel = CalculatorDisplayMemory.evaluateForGraph(
-            YEqualsMemory.equation(trace.functionIndex),
-            trace.x
-        )?.let { "Y=${formatTraceValue(it)}" } ?: "Y=ERR"
+        val (firstLabel, secondLabel) = if (FormatSettingsMemory.usesPolarCoordinates()) {
+            if (graphY == null) {
+                "r=ERR" to "θ=ERR"
+            } else {
+                val radius = hypot(trace.x, graphY)
+                val rawAngle = atan2(graphY, trace.x)
+                val angle = if (ModeSettingsMemory.usesDegrees()) Math.toDegrees(rawAngle) else rawAngle
+                "r=${formatTraceValue(radius)}" to "θ=${formatTraceValue(angle)}"
+            }
+        } else {
+            "X=${formatTraceValue(trace.x)}" to
+                (graphY?.let { "Y=${formatTraceValue(it)}" } ?: "Y=ERR")
+        }
+        CalculatorTextRenderer.draw(guiGraphics, firstLabel, left, footerY, color)
         val yAxisX = if (0.0 in graphWindow.xMin..graphWindow.xMax) {
             graphXToPixel(0.0, left, right, graphWindow)
         } else {
             (left + right) / 2
         }
-        CalculatorTextRenderer.draw(guiGraphics, yLabel, yAxisX, footerY, color)
+        CalculatorTextRenderer.draw(guiGraphics, secondLabel, yAxisX, footerY, color)
     }
 
     private fun formatTraceValue(value: Double): String {
@@ -207,6 +233,62 @@ class CalculatorGraphRenderer(private val controller: CalculatorController) {
                 guiGraphics.fill(yAxisX - 1, tickY, yAxisX + 2, tickY + 1, GRAPH_AXIS_COLOR)
             }
         }
+    }
+
+    private fun renderGraphGrid(
+        guiGraphics: GuiGraphics,
+        left: Int,
+        right: Int,
+        top: Int,
+        bottom: Int,
+        graphWindow: GraphWindow
+    ) {
+        val style = FormatSettingsMemory.gridStyle()
+        if (style == "GridOff") return
+        val xTicks = tickValues(graphWindow.xMin, graphWindow.xMax, graphWindow.xScale)
+        val yTicks = tickValues(graphWindow.yMin, graphWindow.yMax, graphWindow.yScale)
+        if (xTicks.size.toLong() * yTicks.size.toLong() > MAX_GRID_POINTS) return
+
+        if (style == "GridLine") {
+            xTicks.forEach { tick ->
+                val tickX = graphXToPixel(tick, left, right, graphWindow)
+                guiGraphics.fill(tickX, top, tickX + 1, bottom + 1, GRAPH_GRID_COLOR)
+            }
+            yTicks.forEach { tick ->
+                val tickY = graphYToPixel(tick, top, bottom, graphWindow)
+                guiGraphics.fill(left, tickY, right + 1, tickY + 1, GRAPH_GRID_COLOR)
+            }
+        } else {
+            xTicks.forEach { xTick ->
+                val tickX = graphXToPixel(xTick, left, right, graphWindow)
+                yTicks.forEach { yTick ->
+                    val tickY = graphYToPixel(yTick, top, bottom, graphWindow)
+                    guiGraphics.fill(tickX, tickY, tickX + 1, tickY + 1, GRAPH_GRID_COLOR)
+                }
+            }
+        }
+    }
+
+    private fun renderGraphAxisLabels(
+        guiGraphics: GuiGraphics,
+        left: Int,
+        right: Int,
+        top: Int,
+        bottom: Int,
+        graphWindow: GraphWindow
+    ) {
+        val xAxisY = if (0.0 in graphWindow.yMin..graphWindow.yMax) {
+            graphYToPixel(0.0, top, bottom, graphWindow)
+        } else {
+            bottom - DISPLAY_LINE_HEIGHT
+        }
+        val yAxisX = if (0.0 in graphWindow.xMin..graphWindow.xMax) {
+            graphXToPixel(0.0, left, right, graphWindow)
+        } else {
+            left
+        }
+        CalculatorTextRenderer.draw(guiGraphics, "X", right - 4, xAxisY, GRAPH_AXIS_COLOR)
+        CalculatorTextRenderer.draw(guiGraphics, "Y", yAxisX + 1, top, GRAPH_AXIS_COLOR)
     }
 
     private fun renderGraphFunction(
@@ -300,6 +382,11 @@ class CalculatorGraphRenderer(private val controller: CalculatorController) {
         }
     }
 
+    private fun tickValues(minimum: Double, maximum: Double, spacing: Double): List<Double> =
+        buildList {
+            forEachTick(minimum, maximum, spacing, ::add)
+        }
+
     private data class GraphSample(val pixelX: Int, val x: Double, val y: Double)
 
     companion object {
@@ -315,6 +402,8 @@ class CalculatorGraphRenderer(private val controller: CalculatorController) {
         private const val TRACE_VALUE_MAX_CHARACTERS = 10
         private const val DISPLAY_TEXT_COLOR = 0xFF1F1F1F.toInt()
         private const val GRAPH_AXIS_COLOR = 0xFF555555.toInt()
+        private const val GRAPH_GRID_COLOR = 0xFFBBBBBB.toInt()
+        private const val MAX_GRID_POINTS = 5_000L
     }
 }
 

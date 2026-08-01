@@ -33,6 +33,7 @@ import net.amathboi.mi84mod.client.calculator.ui.FunctionMenuTab
 import net.amathboi.mi84mod.client.calculator.ui.GraphWindow
 import net.amathboi.mi84mod.client.calculator.ui.ListEditorState
 import net.amathboi.mi84mod.client.calculator.ui.TraceState
+import net.amathboi.mi84mod.client.calculator.ui.TableViewState
 import net.amathboi.mi84mod.client.calculator.ui.ZoomGraphOperation
 import net.amathboi.mi84mod.client.calculator.ui.ZoomGraphState
 import net.amathboi.mi84mod.client.calculator.ui.ZoomMenuOption
@@ -194,6 +195,8 @@ class CalculatorController(
             CalculatorView.HOME -> HomeViewController.handle(command, state)
             CalculatorView.Y_EQUALS -> YEqualsViewController.handle(command, state)
             CalculatorView.WINDOW -> WindowViewController.handle(command, state)
+            CalculatorView.TABLE_SETUP -> TableSetupViewController.handle(command, state)
+            CalculatorView.FORMAT -> FormatViewController.handle(command)
             CalculatorView.MODE -> ModeViewController.handle(command)
             CalculatorView.ZOOM -> handleZoom(command, graphAspect)
             CalculatorView.ZOOM_FACTORS -> handleZoomFactors(command)
@@ -201,6 +204,11 @@ class CalculatorController(
             CalculatorView.LIST_EDITOR -> ListEditorController.handle(
                 command,
                 state.listEditor ?: ListEditorState().also { state.listEditor = it },
+                state.insertMode
+            )
+            CalculatorView.TABLE -> TableViewController.handle(
+                command,
+                state.table ?: TableViewState().also { state.table = it },
                 state.insertMode
             )
             CalculatorView.GRAPH -> handleGraph(command, graphAspect)
@@ -406,6 +414,12 @@ class CalculatorController(
         state.entryRecallPosition = 0
         if (view == CalculatorView.LIST_EDITOR && state.listEditor == null) {
             state.listEditor = ListEditorState()
+        }
+        if (view == CalculatorView.TABLE && state.table == null) {
+            state.table = TableViewState()
+        }
+        if (view == CalculatorView.TABLE) {
+            state.table?.let(TableViewController::open)
         }
     }
 

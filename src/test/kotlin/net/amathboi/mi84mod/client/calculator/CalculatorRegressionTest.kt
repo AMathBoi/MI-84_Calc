@@ -13,6 +13,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import net.amathboi.mi84mod.client.calculator.controller.CalculatorController
 import net.amathboi.mi84mod.client.calculator.controller.DispatchResult
+import net.amathboi.mi84mod.client.calculator.controller.TableViewController
 import net.amathboi.mi84mod.client.calculator.input.CalculatorInputEvent
 import net.amathboi.mi84mod.client.calculator.input.CalculatorKey
 import net.amathboi.mi84mod.client.calculator.input.ModifierLayer
@@ -26,9 +27,12 @@ class CalculatorRegressionTest {
         resetDisplayMemory()
         resetVariableMemory()
         resetModeMemory()
+        resetFormatMemory()
         resetYEqualsMemory()
         WindowSettingsMemory.restore(DEFAULT_WINDOW)
         setField(WindowSettingsMemory, "selectedIndex", 0)
+        TableSettingsMemory.restore("0", "1", TableEntryMode.AUTO, TableEntryMode.AUTO)
+        setField(TableSettingsMemory, "selectedIndex", 0)
         setField(ZoomMemory, "storedWindow", null)
         setField(ZoomMemory, "previousWindow", null)
     }
@@ -37,7 +41,9 @@ class CalculatorRegressionTest {
     fun removeSavedTestState() {
         Files.deleteIfExists(TEST_CONFIG.resolve("mi84_calc_display_memory.txt"))
         Files.deleteIfExists(TEST_CONFIG.resolve("mi84_calc_mode_settings.txt"))
+        Files.deleteIfExists(TEST_CONFIG.resolve("mi84_calc_format_settings.txt"))
         Files.deleteIfExists(TEST_CONFIG.resolve("mi84_calc_window_settings.txt"))
+        Files.deleteIfExists(TEST_CONFIG.resolve("mi84_calc_table_settings.txt"))
         Files.deleteIfExists(TEST_CONFIG.resolve("mi84_calc_y_equals_memory.txt"))
         Files.deleteIfExists(TEST_CONFIG.resolve("mi84_calc_scalar_variables.txt"))
         Files.deleteIfExists(TEST_CONFIG.resolve("mi84_calc_zoom_memory.txt"))
@@ -107,6 +113,233 @@ class CalculatorRegressionTest {
             WindowSettingsMemory.setGraphWindow("-10000000000000", "10", "1", "-10", "10", "1")
         )
         assertEquals(validWindow, WindowSettingsMemory.snapshot())
+    }
+
+    @Test
+    fun secondWindowOpensTableSetupAndConsumesTheModifier() {
+        val controller = CalculatorController()
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.SECOND))
+        val result = controller.dispatch(CalculatorInputEvent(CalculatorKey.WINDOW))
+
+        assertIs<DispatchResult.Handled>(result)
+        assertEquals(CalculatorView.TABLE_SETUP, controller.state.view)
+        assertEquals(ModifierLayer.NORMAL, controller.state.modifier)
+    }
+
+    @Test
+    fun tableSetupEditsValuesAndSelectsAutoOrAskByRow() {
+        val controller = CalculatorController()
+        dispatchSecond(controller, CalculatorKey.WINDOW)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.CLEAR))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_2))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.NEGATIVE))
+        assertEquals("-2", TableSettingsMemory.tblStart())
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DOWN))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.CLEAR))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_5))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIVIDE))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_2))
+        assertEquals("5/2", TableSettingsMemory.deltaTbl())
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DOWN))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        assertEquals(TableEntryMode.ASK, TableSettingsMemory.independentMode())
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.LEFT))
+        assertEquals(TableEntryMode.AUTO, TableSettingsMemory.independentMode())
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ENTER))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        assertEquals(TableEntryMode.ASK, TableSettingsMemory.dependentMode())
+    }
+
+    @Test
+    fun tableSetupPersistsAllFourSettings() {
+        TableSettingsMemory.restore("-3", "0.5", TableEntryMode.ASK, TableEntryMode.AUTO)
+
+        assertEquals(
+            listOf("TblStart\t-3", "ΔTbl\t0.5", "Indpnt\tAsk", "Depend\tAuto"),
+            Files.readAllLines(TEST_CONFIG.resolve("mi84_calc_table_settings.txt"))
+        )
+    }
+
+    @Test
+    fun secondGraphOpensTableAndConsumesTheModifier() {
+        val controller = CalculatorController()
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.SECOND))
+        val result = controller.dispatch(CalculatorInputEvent(CalculatorKey.GRAPH))
+
+        assertIs<DispatchResult.Handled>(result)
+        assertEquals(CalculatorView.TABLE, controller.state.view)
+        assertEquals(ModifierLayer.NORMAL, controller.state.modifier)
+    }
+
+    @Test
+    fun tableStaysBlankAndCannotSelectHeadersWhenNoYFunctionsExist() {
+        val controller = CalculatorController()
+        dispatchSecond(controller, CalculatorKey.GRAPH)
+        val table = controller.state.table!!
+
+        assertFalse(TableViewController.hasEnabledFunctions())
+        assertEquals(listOf<Int?>(null), TableViewController.columns())
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.UP))
+        assertEquals(0, table.selectedColumnIndex)
+        assertEquals(0, table.selectedRowIndex)
+        assertEquals("", TableViewController.xCellText(table, 0))
+    }
+
+    @Test
+    fun automaticTableUsesTblStartDeltaTblAndGraphFunctions() {
+        TableSettingsMemory.restore("-1", "0.5", TableEntryMode.AUTO, TableEntryMode.AUTO)
+        YEqualsMemory.setEquation(0, "X^2")
+        val controller = CalculatorController()
+        dispatchSecond(controller, CalculatorKey.GRAPH)
+        val table = controller.state.table!!
+
+        assertEquals(listOf(null, 0), TableViewController.columns())
+        assertEquals(0, BigDecimal("0.5").compareTo(TableViewController.xValueAt(table, 3)))
+        assertEquals("0.25", TableViewController.yCellText(table, 0, 3))
+    }
+
+    @Test
+    fun automaticTableScrollsXNegativeButYUpSelectsItsHeaderAtTheSameX() {
+        YEqualsMemory.setEquation(0, "X")
+        val controller = CalculatorController()
+        dispatchSecond(controller, CalculatorKey.GRAPH)
+        val table = controller.state.table!!
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.UP))
+        assertFalse(TableViewController.editingHeader(table))
+        assertEquals(-1, table.selectedRowIndex)
+        assertEquals(0, BigDecimal("-1").compareTo(TableViewController.xValueAt(table, -1)))
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DOWN))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        val selectedX = TableViewController.xValueAt(table, table.selectedRowIndex)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.UP))
+        assertTrue(TableViewController.editingHeader(table))
+        assertEquals(0, table.selectedRowIndex)
+        assertEquals(selectedX, TableViewController.xValueAt(table, table.selectedRowIndex))
+        assertEquals("X", table.entry)
+    }
+
+    @Test
+    fun secondZoomOpensFormatAndEveryChoiceChangesRendererFacingState() {
+        val controller = CalculatorController()
+        dispatchSecond(controller, CalculatorKey.ZOOM)
+
+        assertEquals(CalculatorView.FORMAT, controller.state.view)
+        assertFalse(FormatSettingsMemory.optionAvailable(0, 1))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        assertFalse(FormatSettingsMemory.usesPolarCoordinates())
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DOWN))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        assertFalse(FormatSettingsMemory.showsCoordinates())
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DOWN))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        assertEquals("GridLine", FormatSettingsMemory.gridStyle())
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DOWN))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        assertFalse(FormatSettingsMemory.showsAxes())
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DOWN))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        assertTrue(FormatSettingsMemory.showsLabels())
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DOWN))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        assertFalse(FormatSettingsMemory.showsExpressions())
+        assertEquals(
+            listOf("RectGC", "CoordOff", "GridLine", "AxesOff", "LabelOn", "ExprOff"),
+            Files.readAllLines(TEST_CONFIG.resolve("mi84_calc_format_settings.txt"))
+        )
+    }
+
+    @Test
+    fun tablePacksOnlyNonemptyYColumnsAndNeverSelectsABlankColumn() {
+        YEqualsMemory.setEquation(0, "X")
+        YEqualsMemory.setEquation(2, "X+2")
+        YEqualsMemory.setEquation(4, "X+4")
+        YEqualsMemory.setEquation(6, "X+6")
+        val controller = CalculatorController()
+        dispatchSecond(controller, CalculatorKey.GRAPH)
+        val table = controller.state.table!!
+
+        assertEquals(listOf(null, 0, 2, 4, 6), TableViewController.columns())
+        repeat(5) { controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT)) }
+        assertEquals(4, table.selectedColumnIndex)
+        assertEquals(6, TableViewController.selectedFunctionIndex(table))
+        assertEquals(0, TableViewController.columnIndexAtVisiblePosition(table, 0))
+        assertEquals(3, TableViewController.columnIndexAtVisiblePosition(table, 1))
+        assertEquals(4, TableViewController.columnIndexAtVisiblePosition(table, 2))
+    }
+
+    @Test
+    fun tableYHeaderCanReplaceOrClearThePersistentYFunction() {
+        YEqualsMemory.setEquation(0, "X^2")
+        val controller = CalculatorController()
+        dispatchSecond(controller, CalculatorKey.GRAPH)
+        val table = controller.state.table!!
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.UP))
+        assertTrue(TableViewController.editingHeader(table))
+        assertEquals("X^2", table.entry)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.CLEAR))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.VARIABLE))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ADD))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_1))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ENTER))
+        assertEquals("X+1", YEqualsMemory.equation(0))
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.CLEAR))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ENTER))
+        assertEquals("", YEqualsMemory.equation(0))
+        assertEquals(0, table.selectedColumnIndex)
+        assertEquals(0, table.selectedRowIndex)
+    }
+
+    @Test
+    fun tableAskModesAcceptXAndEvaluateOnlyRequestedYCells() {
+        TableSettingsMemory.restore("0", "1", TableEntryMode.ASK, TableEntryMode.ASK)
+        YEqualsMemory.setEquation(0, "X*2")
+        val controller = CalculatorController()
+        dispatchSecond(controller, CalculatorKey.GRAPH)
+        val table = controller.state.table!!
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_3))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ENTER))
+        assertEquals(0, BigDecimal("3").compareTo(TableViewController.xValueAt(table, 0)))
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        assertEquals(0, table.selectedRowIndex)
+        assertEquals("", TableViewController.yCellText(table, 0, 0))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.ENTER))
+        assertEquals("6", TableViewController.yCellText(table, 0, 0))
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.GRAPH))
+        dispatchSecond(controller, CalculatorKey.GRAPH)
+        assertEquals("", TableViewController.yCellText(table, 0, 0))
+    }
+
+    @Test
+    fun tableShowsEvaluationErrorsWithoutLeavingTheView() {
+        YEqualsMemory.setEquation(0, "1/(X-X)")
+        val controller = CalculatorController()
+        dispatchSecond(controller, CalculatorKey.GRAPH)
+        val table = controller.state.table!!
+
+        assertEquals("ERR", TableViewController.yCellText(table, 0, 0))
+        assertEquals(CalculatorView.TABLE, controller.state.view)
     }
 
     @Test
@@ -1792,6 +2025,14 @@ class CalculatorRegressionTest {
             .get(ModeSettingsMemory) as MutableList<Int>
         DEFAULT_MODE_OPTIONS.forEachIndexed { index, option -> selectedOptions[index] = option }
         setField(ModeSettingsMemory, "selectedCategoryIndex", 0)
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun resetFormatMemory() {
+        val selectedOptions = field(FormatSettingsMemory, "selectedOptions")
+            .get(FormatSettingsMemory) as MutableList<Int>
+        selectedOptions.indices.forEach { selectedOptions[it] = 0 }
+        setField(FormatSettingsMemory, "selectedSettingIndex", 0)
     }
 
     private fun setField(target: Any, name: String, value: Any?) {

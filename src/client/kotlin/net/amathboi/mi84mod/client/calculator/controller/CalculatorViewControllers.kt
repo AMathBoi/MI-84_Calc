@@ -1,7 +1,9 @@
 package net.amathboi.mi84mod.client.calculator.controller
 
 import net.amathboi.mi84mod.client.calculator.CalculatorDisplayMemory
+import net.amathboi.mi84mod.client.calculator.FormatSettingsMemory
 import net.amathboi.mi84mod.client.calculator.ModeSettingsMemory
+import net.amathboi.mi84mod.client.calculator.TableSettingsMemory
 import net.amathboi.mi84mod.client.calculator.WindowSettingsMemory
 import net.amathboi.mi84mod.client.calculator.YEqualsMemory
 import net.amathboi.mi84mod.client.calculator.input.CalculatorCommand
@@ -170,6 +172,51 @@ object ModeViewController {
             CalculatorCommand.Up -> ModeSettingsMemory.selectPreviousCategory()
             CalculatorCommand.Down, CalculatorCommand.Enter -> ModeSettingsMemory.selectNextCategory()
             else -> Unit
+        }
+    }
+}
+
+object FormatViewController {
+    fun handle(command: CalculatorCommand) {
+        when (command) {
+            CalculatorCommand.Left -> FormatSettingsMemory.selectPreviousOption()
+            CalculatorCommand.Right -> FormatSettingsMemory.selectNextOption()
+            CalculatorCommand.Up -> FormatSettingsMemory.selectPreviousSetting()
+            CalculatorCommand.Down, CalculatorCommand.Enter ->
+                FormatSettingsMemory.selectNextSetting()
+            else -> Unit
+        }
+    }
+}
+
+object TableSetupViewController {
+    fun handle(command: CalculatorCommand, state: CalculatorUiState) {
+        when (command) {
+            is CalculatorCommand.Digit ->
+                TableSettingsMemory.appendDigit(command.value, state.insertMode)
+            is CalculatorCommand.Operator ->
+                TableSettingsMemory.append(command.value.toString(), state.insertMode)
+            is CalculatorCommand.Function ->
+                TableSettingsMemory.append("${command.name}(", state.insertMode)
+            is CalculatorCommand.InsertVariable ->
+                TableSettingsMemory.append(command.variable.symbol.toString(), state.insertMode)
+            CalculatorCommand.Decimal -> TableSettingsMemory.append(".", state.insertMode)
+            CalculatorCommand.Variable -> TableSettingsMemory.append("X", state.insertMode)
+            CalculatorCommand.Square -> TableSettingsMemory.append("^2", state.insertMode)
+            CalculatorCommand.Reciprocal -> TableSettingsMemory.append("^-1", state.insertMode)
+            CalculatorCommand.OpenParenthesis -> TableSettingsMemory.append("(", state.insertMode)
+            CalculatorCommand.CloseParenthesis -> TableSettingsMemory.append(")", state.insertMode)
+            CalculatorCommand.Comma -> TableSettingsMemory.append(",", state.insertMode)
+            CalculatorCommand.Negative -> TableSettingsMemory.toggleCurrentOperandSign()
+            CalculatorCommand.Left -> TableSettingsMemory.moveLeft()
+            CalculatorCommand.Right -> TableSettingsMemory.moveRight()
+            CalculatorCommand.Up -> TableSettingsMemory.selectPrevious()
+            CalculatorCommand.Down, CalculatorCommand.Enter -> TableSettingsMemory.selectNext()
+            CalculatorCommand.Delete -> TableSettingsMemory.deleteAtCursor()
+            CalculatorCommand.Clear -> TableSettingsMemory.clearSelected()
+            else -> phaseOneScalarText(command)?.let {
+                TableSettingsMemory.append(it, state.insertMode)
+            }
         }
     }
 }

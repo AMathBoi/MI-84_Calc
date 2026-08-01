@@ -26,10 +26,10 @@ Y=, or Window depending on the active view.
 | Physical key | Normal command | Normal status | 2nd command | 2nd status | Alpha command | Alpha status |
 |---|---|---|---|---|---|---|
 | Y= | Open Y= view | Complete | STAT PLOT menu | Deferred — subsystem and visual review | F1 FRAC function-menu overlay | Complete — approved Phase 4 overlay and fraction template |
-| Window | Open Window view | Complete | TBLSET screen | Deferred — visual review | F2 FUNC function-menu overlay | Partial — approved Phase 4 overlay; numerical calculus rows visibly unavailable |
-| Zoom | Open Zoom view | Complete | FORMAT screen | Deferred — visual review | F3 MTRX shortcut menu | Deferred — subsystem and visual review |
+| Window | Open Window view | Complete | TBLSET screen | Complete — approved Phase 6 TABLE SETUP with persistent values and Auto/Ask choices | F2 FUNC function-menu overlay | Partial — approved Phase 4 overlay; numerical calculus rows visibly unavailable |
+| Zoom | Open Zoom view | Complete | FORMAT screen | Partial — renderer-backed settings complete; PolarGC visible but deferred with polar graph functions | F3 MTRX shortcut menu | Deferred — subsystem and visual review |
 | Trace | Begin trace in Graph | Complete | CALC graph-analysis menu | Deferred — visual review | F4 YVAR shortcut menu | Complete — approved two-column Function Y1–Y9 menu |
-| Graph | Open Graph view | Complete | TABLE view | Deferred — visual review | F5 context-sensitive special menu | Deferred — visual review |
+| Graph | Open Graph view | Complete | TABLE view | Complete — approved Phase 6 graph table with Auto/Ask values and editable Y headers | F5 context-sensitive special menu | Deferred — visual review |
 | 2nd | Toggle one-shot 2nd layer | Complete | Toggle/cancel 2nd | Complete | Switch from Alpha to 2nd | Complete |
 | Mode | Open Mode view | Complete | Quit: return to Home | Complete | No shifted function | No shifted function |
 | Del | Forward delete | Complete | INS: toggle insert/overwrite editing; create a named list when a STAT→Edit header is selected | Partial — context-specific named-list creation complete | No shifted function | No shifted function |

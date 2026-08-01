@@ -48,7 +48,7 @@ CalculatorWidget / Minecraft GuiGraphics
 - `input/CalculatorCommand.kt` maps physical keys and modifier layers to typed logical commands.
 - Primary commands are exhaustive. Phase 1 scalar 2nd meanings, Phase 2 ENTRY/INS and Alpha A-Z/θ,
   plus the approved Phase 4 TEST, ANGLE, MATH-family, VARS, F1 FRAC, F2 FUNC, and F4 YVAR menus
-  have explicit typed commands; remaining unimplemented 2nd and Alpha meanings are explicit
+  and the approved Phase 6 TBLSET/FORMAT/TABLE views have explicit typed commands; remaining unimplemented 2nd and Alpha meanings are explicit
   placeholders.
 
 Visible legends are not identifiers. Code should compare `CalculatorKey.SIN`, not `"sin"`, and
@@ -57,14 +57,17 @@ should never infer behavior from displayed text.
 ### Controller and UI state
 
 - `controller/CalculatorController.kt` is the single input-dispatch entry point.
-- `controller/CalculatorViewControllers.kt` contains Home, Y=, Window, and Mode input behavior.
+- `controller/CalculatorViewControllers.kt` contains Home, Y=, Window, TABLE SETUP, FORMAT, and Mode input behavior.
 - `controller/ListEditorController.kt` owns four-way list-table navigation and the bottom real-number
   cell-entry buffer; it does not render the table.
+- `controller/TableViewController.kt` owns packed graph-table columns, scrolling, Auto/Ask X and Y
+  behavior, Y-header editing, and cell evaluation; it does not render the table.
 - `controller/DispatchResult.kt` distinguishes handled input, unsupported primary keys, and planned
   modifier placeholders.
 - `ui/CalculatorUiState.kt` owns transient state: active view, modifier layer, history/ENTRY
   selection, insert/overwrite mode, persistent-session A-LOCK, compact-menu selection, function-menu
-  overlay and fraction-template editing, trace state, and interactive zoom state.
+  overlay and fraction-template editing, list/table navigation and Ask values, trace state, and
+  interactive zoom state.
 - `ui/CompactMenuState.kt` defines reusable non-Minecraft tab/item/menu models, nested category
   frames, and approved compact menu contents. Unavailable items have no action and cannot activate.
 - `ui/FunctionMenuState.kt` defines the separate bottom-tab F1–F4 overlay, editable origin target,
@@ -84,6 +87,9 @@ Persistent calculator content does not belong in `CalculatorUiState`.
 - The STAT→Edit list table is a non-graph LCD view: renderer-owned L1–L6 headers, selected-cell
   highlighting, next-empty `_` markers, and bottom entry-line presentation read only list memory
   and transient list-editor state.
+- The graph TABLE is also a non-graph LCD view. Its renderer reads the fixed X column and packed non-empty-Y columns,
+  generated or asked X rows, Auto/Ask Y cells, selected headers/cells, and the bottom `X=`/`Yₙ=`
+  entry line from `TableViewController` and transient table state.
 - The renderer draws A-LOCK in the shared mode header and renders compact menus, bottom-tab function
   overlays, unavailable items, compact inline structured fractions, adaptive radicals, and
   subscripted permutation/combination notation without owning menu behavior. Empty indexed-root
@@ -157,8 +163,12 @@ Persistent calculator content does not belong in `CalculatorUiState`.
   index-to-radicand sequence; persisted `nthRoot(value,index)` expressions remain supported.
   Incomplete indexed roots and `nPr`/`nCr` advance to their second field with Right and add their
   closing delimiter when Right leaves the completed second field.
-- `YEqualsMemory`, `WindowSettingsMemory`, `ModeSettingsMemory`, and `ZoomMemory` own their respective
+- `YEqualsMemory`, `WindowSettingsMemory`, `TableSettingsMemory`, `FormatSettingsMemory`,
+  `ModeSettingsMemory`, and `ZoomMemory` own their respective
   persistent domains.
+- `FormatSettingsMemory` stores only renderer-backed choices: rectangular trace-coordinate
+  visibility plus graph grid, axes, and axis-label presentation. PolarGC remains visible but
+  unavailable until polar graph functions exist.
 - `CalculatorPersistence` is the only general file-writing boundary. New stores must use it rather
   than writing files directly.
 - Existing file formats must remain backward compatible unless a documented migration and regression

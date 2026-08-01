@@ -7,11 +7,14 @@ enum class CalculatorView {
     HOME,
     Y_EQUALS,
     WINDOW,
+    TABLE_SETUP,
+    FORMAT,
     MODE,
     ZOOM,
     ZOOM_FACTORS,
     COMPACT_MENU,
     LIST_EDITOR,
+    TABLE,
     GRAPH
 }
 
@@ -66,4 +69,5 @@ class CalculatorUiState {
     var functionMenu: FunctionMenuState? = null
     var fractionTemplate: FractionTemplateState? = null
     var listEditor: ListEditorState? = null
+    var table: TableViewState? = null
 }

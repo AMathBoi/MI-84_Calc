@@ -78,6 +78,9 @@ class CalculatorArchitectureTest {
     fun secondAndAlphaLayersHaveExplicitShiftedCommands() {
         val nonModifierKeys = CalculatorKey.entries - setOf(CalculatorKey.SECOND, CalculatorKey.ALPHA)
         val implementedSecondCommands = mapOf(
+            CalculatorKey.WINDOW to CalculatorCommand.OpenView(CalculatorView.TABLE_SETUP),
+            CalculatorKey.GRAPH to CalculatorCommand.OpenView(CalculatorView.TABLE),
+            CalculatorKey.ZOOM to CalculatorCommand.OpenView(CalculatorView.FORMAT),
             CalculatorKey.NEGATIVE to CalculatorCommand.InsertAns,
             CalculatorKey.DECIMAL to CalculatorCommand.InsertImaginaryUnit,
             CalculatorKey.POWER to CalculatorCommand.InsertPi,

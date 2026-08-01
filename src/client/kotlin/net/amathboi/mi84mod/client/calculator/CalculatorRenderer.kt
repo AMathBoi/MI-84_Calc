@@ -5,6 +5,7 @@ import kotlin.math.PI
 import kotlin.math.roundToInt
 import net.amathboi.mi84mod.client.calculator.controller.CalculatorController
 import net.amathboi.mi84mod.client.calculator.controller.ListEditorController
+import net.amathboi.mi84mod.client.calculator.controller.TableViewController
 import net.amathboi.mi84mod.client.calculator.input.ModifierLayer
 import net.amathboi.mi84mod.client.calculator.ui.CalculatorView
 import net.amathboi.mi84mod.client.calculator.ui.FractionTemplateState
@@ -106,11 +107,14 @@ class CalculatorRenderer(private val controller: CalculatorController) {
             CalculatorView.HOME -> renderDisplay(guiGraphics)
             CalculatorView.Y_EQUALS -> renderYEqualsDisplay(guiGraphics)
             CalculatorView.WINDOW -> renderWindowDisplay(guiGraphics)
+            CalculatorView.TABLE_SETUP -> renderTableSetupDisplay(guiGraphics)
+            CalculatorView.FORMAT -> renderFormatDisplay(guiGraphics)
             CalculatorView.MODE -> renderModeDisplay(guiGraphics)
             CalculatorView.ZOOM -> renderZoomDisplay(guiGraphics)
             CalculatorView.ZOOM_FACTORS -> renderZoomFactorsDisplay(guiGraphics)
             CalculatorView.COMPACT_MENU -> renderCompactMenuDisplay(guiGraphics)
             CalculatorView.LIST_EDITOR -> renderListEditorDisplay(guiGraphics)
+            CalculatorView.TABLE -> renderTableDisplay(guiGraphics)
             CalculatorView.GRAPH -> graphRenderer.render(guiGraphics, x, y, width, height)
         }
         state.functionMenu?.let { renderFunctionMenuOverlay(guiGraphics) }
@@ -203,6 +207,102 @@ class CalculatorRenderer(private val controller: CalculatorController) {
     private fun listCellText(value: CalculatorScalarValue): String =
         if (value.imaginary == null) ModeSettingsMemory.formatNumber(value.real)
         else "${ModeSettingsMemory.formatNumber(value.real)}+${ModeSettingsMemory.formatNumber(value.imaginary)}i"
+
+    /** Draws the graph TABLE with packed non-empty Y columns and a list-style entry footer. */
+    private fun renderTableDisplay(guiGraphics: GuiGraphics) {
+        val table = state.table ?: return
+        val scaleX = width.toFloat() / TEXTURE_WIDTH
+        val scaleY = height.toFloat() / TEXTURE_HEIGHT
+        val left = (x + (DISPLAY_LEFT + DISPLAY_PADDING) * scaleX).toInt()
+        val right = (x + (DISPLAY_RIGHT - DISPLAY_PADDING) * scaleX).toInt()
+        val top = editorDisplayTop(scaleY)
+        val bottom = (y + (DISPLAY_BOTTOM - DISPLAY_PADDING) * scaleY).toInt()
+        val columnWidth = (right - left) / TableViewController.VISIBLE_COLUMNS
+        val headerY = top
+        val tableTop = headerY + DISPLAY_LINE_HEIGHT + 2
+        val entryY = bottom - DISPLAY_LINE_HEIGHT
+        val tableRowsTop = tableTop + 2
+        val columns = TableViewController.columns()
+
+        repeat(TableViewController.VISIBLE_COLUMNS) { visibleColumn ->
+            val columnIndex =
+                TableViewController.columnIndexAtVisiblePosition(table, visibleColumn)
+                    ?: return@repeat
+            val functionIndex = columns[columnIndex]
+            val header = functionIndex?.let { "Y${YEqualsMemory.subscripts[it]}" } ?: "X"
+            val columnLeft = left + visibleColumn * columnWidth
+            if (TableViewController.editingHeader(table) &&
+                columnIndex == table.selectedColumnIndex
+            ) {
+                guiGraphics.fill(
+                    columnLeft,
+                    headerY - 1,
+                    columnLeft + columnWidth - 2,
+                    headerY + DISPLAY_LINE_HEIGHT,
+                    MODE_SELECTION_COLOR
+                )
+                drawDisplayText(
+                    guiGraphics,
+                    header,
+                    columnLeft + 2,
+                    headerY,
+                    DISPLAY_INVERTED_TEXT_COLOR
+                )
+            } else {
+                drawDisplayText(guiGraphics, header, columnLeft + 2, headerY)
+            }
+        }
+
+        guiGraphics.fill(left, tableTop - 1, right, tableTop, DISPLAY_DIVIDER_COLOR)
+        (1 until TableViewController.VISIBLE_COLUMNS).forEach { column ->
+            val dividerX = left + column * columnWidth - 1
+            guiGraphics.fill(dividerX, tableTop, dividerX + 1, entryY - 2, DISPLAY_DIVIDER_COLOR)
+        }
+
+        if (TableViewController.hasEnabledFunctions()) {
+            repeat(TableViewController.VISIBLE_ROWS) { visibleRow ->
+                val row = table.firstVisibleRowIndex + visibleRow
+                val lineY = tableRowsTop + visibleRow * DISPLAY_LINE_HEIGHT
+                repeat(TableViewController.VISIBLE_COLUMNS) { visibleColumn ->
+                    val columnIndex =
+                        TableViewController.columnIndexAtVisiblePosition(table, visibleColumn)
+                            ?: return@repeat
+                    val functionIndex = columns[columnIndex]
+                    val columnLeft = left + visibleColumn * columnWidth
+                    val text = if (functionIndex == null) {
+                        TableViewController.xCellText(table, row)
+                    } else {
+                        TableViewController.yCellText(table, functionIndex, row)
+                    }
+                    if (!TableViewController.editingHeader(table) &&
+                        columnIndex == table.selectedColumnIndex &&
+                        row == table.selectedRowIndex
+                    ) {
+                        guiGraphics.fill(
+                            columnLeft,
+                            lineY - 1,
+                            columnLeft + columnWidth - 2,
+                            lineY + DISPLAY_LINE_HEIGHT,
+                            DISPLAY_HIGHLIGHT_COLOR
+                        )
+                    }
+                    drawDisplayText(guiGraphics, text, columnLeft + 2, lineY)
+                }
+            }
+        }
+
+        guiGraphics.fill(left, entryY - 2, right, entryY - 1, DISPLAY_DIVIDER_COLOR)
+        val entryPrefix = TableViewController.bottomPrefix(table)
+        val entryValue = TableViewController.bottomValue(table)
+        drawDisplayText(guiGraphics, entryPrefix, left, entryY)
+        val entryValueLeft = left + measureDisplayText(entryPrefix)
+        drawMathExpression(guiGraphics, entryValue, entryValueLeft, entryY)
+        if ((TableViewController.editingHeader(table) && table.headerEntryLocked) ||
+            TableViewController.editingAskedX(table)
+        ) {
+            renderTableEntryCursor(guiGraphics, table.entry, entryValueLeft, entryY)
+        }
+    }
 
     /** Shows the five most useful active Mode values in the gray strip above every LCD view. */
     private fun renderModeIndicator(guiGraphics: GuiGraphics) {
@@ -385,6 +485,89 @@ class CalculatorRenderer(private val controller: CalculatorController) {
             ) {
                 renderWindowCursor(guiGraphics, value, valueLeft, lineY)
             }
+        }
+    }
+
+    /** Draws the table inputs and Auto/Ask choices used by TABLE. */
+    private fun renderTableSetupDisplay(guiGraphics: GuiGraphics) {
+        val scaleX = width.toFloat() / TEXTURE_WIDTH
+        val scaleY = height.toFloat() / TEXTURE_HEIGHT
+        val left = (x + (DISPLAY_LEFT + DISPLAY_PADDING) * scaleX).toInt()
+        val top = editorDisplayTop(scaleY)
+        val font = Minecraft.getInstance().font
+
+        drawDisplayText(guiGraphics, "TABLE SETUP", left, top)
+        repeat(TableSettingsMemory.size()) { settingIndex ->
+            val lineY = top + (settingIndex + 1) * DISPLAY_LINE_HEIGHT
+            val label = TableSettingsMemory.label(settingIndex)
+            if (settingIndex < 2) {
+                val labelText = "$label="
+                drawDisplayText(guiGraphics, labelText, left, lineY)
+                val valueLeft =
+                    left + (font.width(labelText) * DISPLAY_TEXT_SCALE).toInt() + 3
+                val value = TableSettingsMemory.value(settingIndex)
+                drawMathExpression(guiGraphics, value, valueLeft, lineY)
+                if (settingIndex == TableSettingsMemory.selectedIndex) {
+                    renderTableSetupCursor(guiGraphics, value, valueLeft, lineY)
+                }
+            } else {
+                val rowText = "$label: Auto Ask"
+                drawDisplayText(guiGraphics, rowText, left, lineY)
+                val option = TableSettingsMemory.mode(settingIndex).displayName
+                val optionStart = rowText.indexOf(option, startIndex = label.length + 2)
+                renderModeSelection(
+                    guiGraphics,
+                    rowText,
+                    option,
+                    optionStart,
+                    optionStart + option.length,
+                    left,
+                    lineY,
+                    blink = settingIndex == TableSettingsMemory.selectedIndex
+                )
+            }
+        }
+    }
+
+    /** Draws persistent graph FORMAT options; every row is honored by the graph renderer. */
+    private fun renderFormatDisplay(guiGraphics: GuiGraphics) {
+        val scaleX = width.toFloat() / TEXTURE_WIDTH
+        val scaleY = height.toFloat() / TEXTURE_HEIGHT
+        val left = (x + (DISPLAY_LEFT + DISPLAY_PADDING) * scaleX).toInt()
+        val top = editorDisplayTop(scaleY)
+
+        drawDisplayText(guiGraphics, "FORMAT", left, top)
+        repeat(FormatSettingsMemory.size()) { settingIndex ->
+            val options = FormatSettingsMemory.options(settingIndex)
+            val selectedIndex = FormatSettingsMemory.selectedOptionIndex(settingIndex)
+            val rowText = options.joinToString(" ")
+            val optionText = options[selectedIndex]
+            val optionStart = options.take(selectedIndex).sumOf { it.length + 1 }
+            val lineY = top + (settingIndex + 1) * DISPLAY_LINE_HEIGHT
+            drawDisplayText(guiGraphics, rowText, left, lineY)
+            var optionOffset = 0
+            options.forEachIndexed { optionIndex, option ->
+                if (!FormatSettingsMemory.optionAvailable(settingIndex, optionIndex)) {
+                    drawDisplayText(
+                        guiGraphics,
+                        option,
+                        left + measureDisplayText(rowText.substring(0, optionOffset)),
+                        lineY,
+                        DISPLAY_HIGHLIGHT_COLOR
+                    )
+                }
+                optionOffset += option.length + 1
+            }
+            renderModeSelection(
+                guiGraphics,
+                rowText,
+                optionText,
+                optionStart,
+                optionStart + optionText.length,
+                left,
+                lineY,
+                blink = settingIndex == FormatSettingsMemory.selectedSettingIndex
+            )
         }
     }
 
@@ -1189,6 +1372,42 @@ class CalculatorRenderer(private val controller: CalculatorController) {
 
         val font = Minecraft.getInstance().font
         val cursorPosition = WindowSettingsMemory.cursor(WindowSettingsMemory.selectedIndex)
+        val cursorLeft = left + measureMathCursorPrefix(text.substring(0, cursorPosition))
+        val cursorBounds =
+            editorCursorBounds(text, cursorPosition, cursorLeft, font.width("0"))
+        renderEditorCursor(guiGraphics, cursorBounds, lineY, DISPLAY_TEXT_COLOR)
+    }
+
+    private fun renderTableSetupCursor(
+        guiGraphics: GuiGraphics,
+        text: String,
+        left: Int,
+        lineY: Int
+    ) {
+        if ((System.currentTimeMillis() / 500L) % 2L != 0L) return
+
+        val font = Minecraft.getInstance().font
+        val cursorPosition = TableSettingsMemory.cursor(TableSettingsMemory.selectedIndex)
+        val cursorLeft = left + measureMathCursorPrefix(text.substring(0, cursorPosition))
+        val cursorBounds =
+            editorCursorBounds(text, cursorPosition, cursorLeft, font.width("0"))
+        renderEditorCursor(guiGraphics, cursorBounds, lineY, DISPLAY_TEXT_COLOR)
+    }
+
+    private fun renderTableEntryCursor(
+        guiGraphics: GuiGraphics,
+        text: String,
+        left: Int,
+        lineY: Int
+    ) {
+        if ((System.currentTimeMillis() / 500L) % 2L != 0L) return
+        val table = state.table ?: return
+        val cursorPosition = if (TableViewController.editingHeader(table)) {
+            table.entryCursor
+        } else {
+            text.length
+        }
+        val font = Minecraft.getInstance().font
         val cursorLeft = left + measureMathCursorPrefix(text.substring(0, cursorPosition))
         val cursorBounds =
             editorCursorBounds(text, cursorPosition, cursorLeft, font.width("0"))

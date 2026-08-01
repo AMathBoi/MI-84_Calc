@@ -144,6 +144,14 @@ object YEqualsMemory {
         save()
     }
 
+    /** Replaces one complete expression for TABLE header editing. */
+    fun setEquation(index: Int, expression: String) {
+        if (index !in equations.indices) return
+        equations[index] = expression.take(MAX_EXPRESSION_LENGTH)
+        cursors[index] = equations[index].length
+        save()
+    }
+
     private fun load() {
         CalculatorPersistence.load(memoryFile) { savedLines ->
             savedLines

@@ -35,7 +35,7 @@ records the prerequisite subsystem and confirms the visual gate without repeatin
 | PRGM EXEC/EDIT/NEW and command tabs | Program and string storage, editor, interpreter, and I/O model | Review program lists, editor states, and command tabs separately |
 | VARS/Y-VARS and F4 YVAR | Only typed variables backed by an implemented memory/graph domain | Review category tabs, unavailable rows, and selection return behavior |
 | STAT PLOT | Stable lists and graph-plot rendering | Review the main menu and each plot editor/type separately |
-| TBLSET and TABLE | Table settings/evaluation using graph functions | Review settings, Auto/Ask entry, columns, scrolling, and error cells separately |
+| TBLSET and TABLE | Table settings/evaluation using graph functions | Approved and implemented with signed Auto rows, Auto/Ask entry, scrolling, editable Y headers, and error cells |
 | FORMAT | Graph renderer support for every option shown | Do not display decorative settings that have no runtime effect |
 | Graph CALC | Numerical graph-analysis primitives and interaction state | Review each operation's prompts, markers, cancellation, and errors separately |
 | INS indicator | Insert/overwrite editor state | INS may ship without an indicator; any indicator requires review |
@@ -369,6 +369,10 @@ Contains:
 
 Auto generates X values from `TblStart` and `ΔTbl`. Ask allows the user to enter X values.
 
+`2nd` + Window opens the implemented view with `TABLE SETUP` at the top. Up/down selects a row;
+left/right moves within `TblStart` or `ΔTbl` and chooses `Auto`/`Ask` on the two mode rows. Enter
+advances to the next row, while normal calculator entry, Del, Clear, and `(−)` edit the value rows.
+
 #### 2nd Zoom: FORMAT
 
 Contains:
@@ -380,6 +384,12 @@ Contains:
 - `LabelOff / LabelOn`
 - `ExprOn / ExprOff`
 - optional graph-color and asymptote choices only if supported by MI-84
+
+`2nd` + Zoom opens the implemented persistent `FORMAT` view. Up/down selects a setting and
+left/right changes it. `RectGC` is active; `PolarGC` remains visibly unavailable until polar graph
+functions are implemented. Coordinate and expression choices control the trace footer/header;
+grid, axes, and label choices directly affect the graph. Graph-color and asymptote rows are omitted
+because the renderer does not support them.
 
 #### 2nd Trace: CALC
 
@@ -397,6 +407,19 @@ Contains:
 
 Displays an X column and one column for every enabled Y= expression. TBLSET controls automatic or
 asked-for X values. Invalid evaluations display an undefined/error cell without closing the table.
+
+The fixed left column is always `X`; only non-empty Y functions become selectable columns. If no
+Y function exists, the table body stays blank. Up/down scrolls rows and left/right scrolls among X
+and the available Y columns. X's header and unused columns cannot be selected. Up from the first row
+of a Y column selects that Y header, where the list-editor-style bottom `Yₙ=` line can clear or
+replace the persistent function. Ordinary cells use the same bottom area to show `X=` or `Yₙ=`.
+Selecting a Y header preserves its current X row. In Auto mode, scrolling upward in X continues
+through negative row offsets instead of treating the X header as selectable.
+
+With independent `Auto`, row X values are `TblStart + row·ΔTbl`; independent `Ask` accepts X
+expressions through the bottom entry line. Dependent `Auto` evaluates every visible Y cell, while
+dependent `Ask` leaves cells blank until Enter requests the selected cell. Undefined evaluations
+display `ERR` and leave TABLE open.
 
 ### Editing, system, and data menus
 

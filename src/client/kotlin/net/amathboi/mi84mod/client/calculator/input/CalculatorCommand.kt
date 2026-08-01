@@ -78,6 +78,9 @@ object CalculatorKeyBindings {
     }
 
     private fun secondCommand(key: CalculatorKey): CalculatorCommand = when (key) {
+        CalculatorKey.WINDOW -> CalculatorCommand.OpenView(CalculatorView.TABLE_SETUP)
+        CalculatorKey.GRAPH -> CalculatorCommand.OpenView(CalculatorView.TABLE)
+        CalculatorKey.ZOOM -> CalculatorCommand.OpenView(CalculatorView.FORMAT)
         CalculatorKey.NEGATIVE -> CalculatorCommand.InsertAns
         CalculatorKey.DECIMAL -> CalculatorCommand.InsertImaginaryUnit
         CalculatorKey.POWER -> CalculatorCommand.InsertPi
