@@ -19,13 +19,15 @@
 | `src/client/kotlin/.../calculator/CalculatorGraphRenderer.kt` | FORMAT-controlled grid/axes/labels plus functions, trace, and interactive zoom rendering |
 | `src/client/kotlin/.../calculator/input/CalculatorKey.kt` | Stable typed identities for all 50 physical keys |
 | `src/client/kotlin/.../calculator/input/CalculatorKeyLayout.kt` | Texture-relative physical hitboxes with no behavior |
-| `src/client/kotlin/.../calculator/input/CalculatorCommand.kt` | Typed Normal, Phase 1/2, approved Phase 4, and Phase 6 TBLSET/FORMAT/TABLE commands, Alpha variables, and explicit remaining placeholders |
+| `src/client/kotlin/.../calculator/input/CalculatorCommand.kt` | Typed Normal, Phase 1/2, approved Phase 4, and Phase 6 TBLSET/FORMAT/TABLE/STAT PLOT commands, Alpha variables, and explicit remaining placeholders |
 | `src/client/kotlin/.../calculator/controller/CalculatorController.kt` | Central input dispatch, view transitions, graph, table, trace, and zoom behavior |
 | `src/client/kotlin/.../calculator/controller/CalculatorViewControllers.kt` | Home, Y=, Window, TABLE SETUP, FORMAT, and Mode input behavior |
 | `src/client/kotlin/.../calculator/controller/ListEditorController.kt` | STAT→Edit table navigation and real cell-entry behavior |
 | `src/client/kotlin/.../calculator/controller/TableViewController.kt` | Graph TABLE navigation, Auto/Ask evaluation, X entry, and Y-header editing |
+| `src/client/kotlin/.../calculator/controller/StatPlotViewController.kt` | STAT PLOT main menu, nested plot tabs, global enable actions, and setting changes |
 | `src/client/kotlin/.../calculator/ui/CalculatorUiState.kt` | Active view, modifier/A-LOCK, history/ENTRY, insert mode, compact/function menus, fraction template, list/table state, trace, and interactive zoom state |
 | `src/client/kotlin/.../calculator/ui/TableViewState.kt` | Transient TABLE selection, scrolling, asked X values, requested Y cells, and entry buffer |
+| `src/client/kotlin/.../calculator/ui/StatPlotViewState.kt` | Transient STAT PLOT main/editor selection and active plot tab |
 | `src/client/kotlin/.../calculator/ui/CompactMenuState.kt` | Reusable non-Minecraft compact-menu definitions, tabs, items, availability, selection, and return target |
 | `src/client/kotlin/.../calculator/ui/FunctionMenuState.kt` | Bottom-tab F1–F4 overlay definitions, editor targets, typed actions, and transient structured fraction fields |
 | `src/client/kotlin/.../calculator/ExpressionEditingTokens.kt` | Shared atomic-token recognition, typed Y-function references, digit disambiguation, and operand-sign editing |
@@ -44,6 +46,8 @@
 | `src/client/kotlin/.../calculator/WindowSettingsMemory.kt` | Persistent graph-window settings and edit cursors |
 | `src/client/kotlin/.../calculator/TableSettingsMemory.kt` | Persistent TblStart/ΔTbl expressions and independent/dependent Auto/Ask modes |
 | `src/client/kotlin/.../calculator/FormatSettingsMemory.kt` | Persistent renderer-backed graph coordinate, grid, axes, label, and expression settings |
+| `src/client/kotlin/.../calculator/StatPlotSettingsMemory.kt` | Persistent fixed-color Plot1/2/3 On/Off, type, list-source, and mark settings |
+| `src/client/kotlin/.../calculator/StatPlotGraphData.kt` | Pure real-list point pairing and graph-window segment clipping for stat plots |
 | `src/client/kotlin/.../calculator/ZoomMemory.kt` | Persistent zoom memory and selected fractional-zoom factor |
 | `src/client/kotlin/.../Mi84_calcDataGenerator.kt` | Empty `DataGeneratorEntrypoint` stub |
 | `src/client/resources/assets/mi84_calc/textures/calculator/calc.png` | Calculator artwork (440×1024 source texture) |
@@ -66,7 +70,7 @@
   - Dragging is enabled only from the 44 px top strip.
   - `CalculatorKeyLayout` owns texture-relative hitboxes. Mouse clicks become a typed `CalculatorInputEvent` and enter through `CalculatorController.dispatch`; the calculator does not accept computer keyboard input.
   - Implemented primary keys include digits, arithmetic, decimal, sign, powers/reciprocal, parentheses, `sin`/`cos`/`tan`/`log`/`ln`, `X`, scalar `sto->variable`, comma, Clear, Enter, Del, cursor arrows, history navigation, Y=, Window, Zoom, Mode, Trace, and Graph.
-  - 2nd and Alpha are normally one-shot modifier layers. `2nd` then Alpha enables persistent-session A-LOCK with a gray-header indicator; Alpha cancels it, and a temporary 2nd command returns to the lock. `2nd` + Mode is Quit and returns to Home. Phase 1 scalar 2nd mappings implement explicit `Ans`, `i`, `π`, `e`, inverse trig, `10^(`, `e^(`, `sqrt(`, and `EE`. Phase 2 adds ENTRY, INS, and typed Alpha A-Z/θ variables; Phase 6 adds TBLSET on `2nd` + Window, FORMAT on `2nd` + Zoom, and TABLE on `2nd` + Graph; every unresolved shifted meaning remains an explicit placeholder and cannot fall through to the primary action. Zoom retains its Alpha A-G shortcuts.
+  - 2nd and Alpha are normally one-shot modifier layers. `2nd` then Alpha enables persistent-session A-LOCK with a gray-header indicator; Alpha cancels it, and a temporary 2nd command returns to the lock. `2nd` + Mode is Quit and returns to Home. Phase 1 scalar 2nd mappings implement explicit `Ans`, `i`, `π`, `e`, inverse trig, `10^(`, `e^(`, `sqrt(`, and `EE`. Phase 2 adds ENTRY, INS, and typed Alpha A-Z/θ variables; Phase 6 adds STAT PLOT configuration on `2nd` + Y=, TBLSET on `2nd` + Window, FORMAT on `2nd` + Zoom, and TABLE on `2nd` + Graph; every unresolved shifted meaning remains an explicit placeholder and cannot fall through to the primary action. Zoom retains its Alpha A-G shortcuts.
   - The reviewed Phase 4 compact TEST menu exposes TEST relations and LOGIC tokens through tabs, arrows, numeric hotkeys, Enter, Clear, and direct-view exits. CONDITIONS rows are visible but unavailable pending editable-template review. `and`, `or`, and `xor` move, overwrite, and forward-delete as whole editor tokens. Available tokens return to the originating Home, Y=, or Window editor; other origins return to Home.
   - The reviewed ANGLE menu shows all eight rows without scrolling. Degree/radian markers and `R►Pr(`, `R►Pθ(`, `P►Rx(`, and `P►Ry(` are implemented with active Angle Unit semantics. Minute notation and `►DMS` are visible but unavailable.
   - The reviewed MATH menu exposes five MATH/NUM/CMPLX/PROB/FRAC tabs through the shared nine-row compact viewport. Numeric and displayed Alpha A-D hotkeys, arrows, Enter, Clear, and direct-view exits use the same typed routing. Cube, cube root, nth root, `logBASE`, the Phase 3 NUM helpers, `abs`, `nPr`, `nCr`, factorial, and the shared fraction templates are available. Conversion, numerical-calculus, piecewise/solver, broader complex, and random-generator rows remain visibly unavailable.
@@ -84,6 +88,7 @@
   - `2nd` + Window opens the `TABLE SETUP` view. It persistently edits `TblStart` and `ΔTbl`, and left/right selects `Auto` or `Ask` independently for `Indpnt` and `Depend`; these settings control the TABLE view.
   - `2nd` + Graph opens TABLE. X stays fixed as the left column while only non-empty Y functions scroll through the remaining selectable columns. Auto X rows use `TblStart + row·ΔTbl`; Ask X rows use a list-style bottom `X=` editor. Dependent Auto evaluates immediately, while Ask evaluates a selected Y cell on Enter. Up from a Y column's first row opens a bottom `Yₙ=` header editor without changing its selected X row; the editor changes the same persistent function used by Y= and Graph. X's header and blank columns cannot be selected. Auto X can scroll through negative row offsets, and invalid cells show `ERR` without closing TABLE.
   - `2nd` + Zoom opens FORMAT. RectGC, coordinate visibility, off/dot/line grids, axes, axis labels, and trace-expression visibility are renderer-backed and persistent. PolarGC remains visible but unavailable until polar graph functions exist. Unsupported graph-color/asymptote options are not stored or displayed.
+  - `2nd` + Y= opens STAT PLOT configuration. Its main page numbers `1:` through `5:` and highlights only that prefix; blue/red/black Plot1/2/3 have two-line button summaries and PlotsOn/PlotsOff are global actions. Each nested plot editor has Plot1/2/3 tabs and persistent On/Off plus six type-specific configurations: Scatter/Line use XList/YList/Mark, Histogram/modified box use XList/Freq/Mark, regular box removes Mark, and relative frequency uses Data List/Data Axis/Mark. Every list field cycles existing lists only. Enabled Scatter and Line plots render paired real points on Graph with configured colors/marks and clipped Line segments; Histogram, both box plots, and relative frequency show `[deferred]` on the main page and editor until their graph renderers exist.
   - The Mode view contains all persistent setting categories in a ten-row scrolling viewport. Up/down changes category and left/right changes its selected option immediately. Every category's selected option is rendered as white text in a black box; the active option blinks. The Mode view uses an extra 10 source-texture pixels at the bottom of the LCD.
   - The Graph view plots every non-empty Y= expression in its assigned color. It uses X/Y bounds and scales for the axes and tick marks, plus Xres for horizontal sampling. Before joining adjacent samples it evaluates the midpoint and rejects undefined or pole-like segments, preventing visible bridges across common asymptotes. Invalid graph bounds/settings display `INVALID WINDOW`.
   - Trace opens the Graph view at Y1 and the midpoint of the X window. Its blinking pixel `X` stays centered over the evaluated point; left/right moves it by `TraceStep`, and up/down skips between non-empty Y= expressions. Trace reserves an LCD header/footer for the selected colored equation and its colored `X=`/`Y=` readout.
@@ -133,6 +138,7 @@
 - Phase 3 nonvisual relations, numeric Boolean logic, multi-argument parsing, and core MATH/NUM scalar helpers
 - Phase 4 A-LOCK, compact TEST/LOGIC, partial ANGLE, partial MATH/NUM/CMPLX/PROB/FRAC, nested partial VARS/Y-VARS, bottom-tab F1 FRAC/F2 FUNC/F4 YVAR overlays, and the direct Alpha fraction shortcut; dependent CONDITIONS, graph-mode variable tabs, DMS, fraction-conversion, complex/random, and numerical-calculus rows are visibly unavailable
 - Phase 5 real-list scope: persistent L1–L6 and user-named list storage; Stat opens a tabbed menu whose EDIT tab enables Edit, then a TI-84-style horizontally scrollable table with next-empty-row underscores, a bottom cell-entry line, full-precision real-expression cell evaluation, and Enter-locked header-literal cursor editing. `2nd` Del on a header creates a left-side temporary named tab, populated by up to five Alpha characters. Named-list references are distinct from Alpha scalars and render with an L prefix in Home. `2nd` Stat opens active NAMES/OPS/MATH with correlated multi-list sorting and persistent Fill behavior. Complex-list entry/presentation remains deferred; Select, matrix conversions, and statistics remain with their owning later phases
+- Phase 6 approved scope: persistent TBLSET, signed/asked TABLE behavior, renderer-backed FORMAT settings, persistent STAT PLOT configuration, and Scatter/Line graph rendering. PolarGC and Histogram/box/relative-frequency rendering remain visibly deferred and do not keep Phase 6 open
 - `sin`, `cos`, `tan`, `log`, `ln`, scalar variables/storage, forward delete, cursor movement, history recall, implicit multiplication, and omitted function-closing-parenthesis completion
 - In-LCD Y= editor for nine colored expressions
 - Persistent Y= expressions across game restarts
@@ -140,6 +146,7 @@
 - Persistent in-LCD TABLE SETUP editor with `TblStart`, `ΔTbl`, and independent/dependent `Auto`/`Ask` modes
 - Graph-backed TABLE with packed X/Y columns, Auto/Ask entry and evaluation, editable Y headers, scrolling, and visible error cells
 - Persistent renderer-backed FORMAT view with rectangular coordinate, grid, axes, label, and expression options; PolarGC is visibly deferred
+- Persistent STAT PLOT configuration with numbered two-line summaries, nested tabs, global enable actions, fixed blue/red/black identities, type-specific fields, six types, and four marks; Scatter/Line graphing is complete while distribution plots are deferred
 - Persistent in-LCD Mode editor with scrolling, four-way navigation, and inverted selected options
 - Normal/scientific/engineering and floating/fixed decimal display modes
 - Degree and radian trigonometric evaluation with deterministic common-angle forward/inverse identities and pole-domain errors
@@ -149,7 +156,7 @@
 - In-LCD Zoom/Memory menu with preset, box, cursor-centered, fitted, fractional, previous, store/recall, and factor-selection zoom functionality
 - Typed physical-key layout and exhaustive primary-command mapping
 - Mouse-only calculator input events and central non-Minecraft controller
-- Explicit one-shot 2nd/Alpha modifier layers, persistent A-LOCK, and typed Phase 1/2, approved Phase 4, and Phase 6 TBLSET/FORMAT/TABLE mappings/placeholders
+- Explicit one-shot 2nd/Alpha modifier layers, persistent A-LOCK, and typed Phase 1/2, approved Phase 4, and Phase 6 TBLSET/FORMAT/TABLE/STAT PLOT mappings/placeholders
 - 2nd + Mode Quit transition back to Home
 - Split widget, renderer, transient UI state, and per-view input controllers
 - Automated layout, overlap, mapping, modifier, and transition checks

@@ -34,7 +34,7 @@ records the prerequisite subsystem and confirms the visual gate without repeatin
 | APPS | A deliberately designed application storage and lifecycle, or an explicit unsupported decision | First review the empty state; review launching only after the subsystem exists |
 | PRGM EXEC/EDIT/NEW and command tabs | Program and string storage, editor, interpreter, and I/O model | Review program lists, editor states, and command tabs separately |
 | VARS/Y-VARS and F4 YVAR | Only typed variables backed by an implemented memory/graph domain | Review category tabs, unavailable rows, and selection return behavior |
-| STAT PLOT | Stable lists and graph-plot rendering | Review the main menu and each plot editor/type separately |
+| STAT PLOT | Stable lists and graph-plot rendering | Main configuration and plot editor reviewed; graph rendering remains a separate visual/domain review |
 | TBLSET and TABLE | Table settings/evaluation using graph functions | Approved and implemented with signed Auto rows, Auto/Ask entry, scrolling, editable Y headers, and error cells |
 | FORMAT | Graph renderer support for every option shown | Do not display decorative settings that have no runtime effect |
 | Graph CALC | Numerical graph-analysis primitives and interaction state | Review each operation's prompts, markers, cancellation, and errors separately |
@@ -349,14 +349,31 @@ returns to the parent VARS/Y-VARS menu before closing it.
 
 Main items:
 
-1. `Plot1...`
-2. `Plot2...`
-3. `Plot3...`
-4. `PlotsOn`
-5. `PlotsOff`
+1. `1: Stat Plot 1...`
+2. `2: Stat Plot 2...`
+3. `3: Stat Plot 3...`
+4. `4: PlotsOn`
+5. `5: PlotsOff`
 
-Each plot editor contains On/Off, plot type, source lists, mark style, and color. Plot types are
-Scatter, xyLine, Histogram, modified box plot, regular box plot, and normal probability plot.
+The implemented main page uses numbered items `1:` through `5:`. Only the number prefix is inverted
+by the cursor. Each plot uses two lines: line one shows `1: Stat Plot 1...Off/On`; line two shows its
+type-specific fields and mark. Plot1 is blue, Plot2 is red, and Plot3 is black. Each plot is a button
+that opens its editor. `4: PlotsOn` and `5: PlotsOff` change all three plots together.
+
+The editor has Plot1/Plot2/Plot3 tabs across the top. Selecting the tab row and pressing left/right
+switches plots. The remaining rows persist On/Off, plot type, and type-specific fields. Scatter and
+Line use XList, YList, and Mark. Histogram and modified box use XList, Freq, and Mark. Regular box
+uses XList and Freq without Mark. Relative frequency uses Data List, Data Axis (`X`/`Y`), and Mark.
+All list fields cycle only through existing built-in or named calculator lists. Types are Scatter,
+Line, Histogram, box-and-whisker with outliers, box-and-whisker without outliers, and relative
+frequency. Marks are open square, plus, dot, and smaller dot. Clear returns to the main page.
+
+Enabled Scatter and Line plots now render paired real X/Y list values in Graph using their fixed
+plot color and selected mark; Line also connects consecutive valid pairs. Mismatched list dimensions
+do not plot, complex/invalid pairs break a line, and segments are clipped to the graph window.
+Histogram, both box plots, and relative-frequency graph rendering remain deferred. Their type names
+show `[deferred]` on the main STAT PLOT page and in each plot editor so an enabled configuration
+cannot be mistaken for a rendered graph type.
 
 #### 2nd Window: TBLSET
 

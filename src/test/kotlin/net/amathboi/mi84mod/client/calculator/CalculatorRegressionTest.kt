@@ -20,6 +20,7 @@ import net.amathboi.mi84mod.client.calculator.input.ModifierLayer
 import net.amathboi.mi84mod.client.calculator.ui.CalculatorView
 import net.amathboi.mi84mod.client.calculator.ui.CompactMenuId
 import net.amathboi.mi84mod.client.calculator.ui.FunctionMenuTab
+import net.amathboi.mi84mod.client.calculator.ui.StatPlotScreen
 
 class CalculatorRegressionTest {
     @BeforeTest
@@ -28,6 +29,7 @@ class CalculatorRegressionTest {
         resetVariableMemory()
         resetModeMemory()
         resetFormatMemory()
+        resetStatPlotMemory()
         resetYEqualsMemory()
         WindowSettingsMemory.restore(DEFAULT_WINDOW)
         setField(WindowSettingsMemory, "selectedIndex", 0)
@@ -42,6 +44,7 @@ class CalculatorRegressionTest {
         Files.deleteIfExists(TEST_CONFIG.resolve("mi84_calc_display_memory.txt"))
         Files.deleteIfExists(TEST_CONFIG.resolve("mi84_calc_mode_settings.txt"))
         Files.deleteIfExists(TEST_CONFIG.resolve("mi84_calc_format_settings.txt"))
+        Files.deleteIfExists(TEST_CONFIG.resolve("mi84_calc_stat_plot_settings.txt"))
         Files.deleteIfExists(TEST_CONFIG.resolve("mi84_calc_window_settings.txt"))
         Files.deleteIfExists(TEST_CONFIG.resolve("mi84_calc_table_settings.txt"))
         Files.deleteIfExists(TEST_CONFIG.resolve("mi84_calc_y_equals_memory.txt"))
@@ -261,6 +264,86 @@ class CalculatorRegressionTest {
             listOf("RectGC", "CoordOff", "GridLine", "AxesOff", "LabelOn", "ExprOff"),
             Files.readAllLines(TEST_CONFIG.resolve("mi84_calc_format_settings.txt"))
         )
+    }
+
+    @Test
+    fun statPlotMainMenuAndNestedEditorPersistAllApprovedSettings() {
+        val controller = CalculatorController()
+        dispatchSecond(controller, CalculatorKey.Y_EQUALS)
+        val state = controller.state.statPlot!!
+
+        assertEquals(CalculatorView.STAT_PLOT, controller.state.view)
+        assertEquals(0xFF55AAFF.toInt(), StatPlotSettingsMemory.plot(0).color)
+        assertEquals(0xFFFF5555.toInt(), StatPlotSettingsMemory.plot(1).color)
+        assertEquals(0xFF000000.toInt(), StatPlotSettingsMemory.plot(2).color)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_4))
+        assertTrue((0..2).all { StatPlotSettingsMemory.plot(it).enabled })
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_5))
+        assertTrue((0..2).none { StatPlotSettingsMemory.plot(it).enabled })
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_2))
+        assertEquals(StatPlotScreen.EDITOR, state.screen)
+        assertEquals(1, state.selectedPlotIndex)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.LEFT))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        assertEquals(1, state.selectedPlotIndex)
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DOWN))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DOWN))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DOWN))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DOWN))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DOWN))
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+
+        val plot2 = StatPlotSettingsMemory.plot(1)
+        assertTrue(plot2.enabled)
+        assertEquals(StatPlotType.LINE, plot2.type)
+        assertEquals("L2", plot2.xList)
+        assertEquals("L3", plot2.yList)
+        assertEquals(StatPlotMark.PLUS, plot2.mark)
+        assertEquals(
+            listOf(
+                "Off\tSCATTER\tL1\tL2\tOPEN_SQUARE\tX",
+                "On\tLINE\tL2\tL3\tPLUS\tX",
+                "Off\tSCATTER\tL1\tL2\tOPEN_SQUARE\tX"
+            ),
+            Files.readAllLines(TEST_CONFIG.resolve("mi84_calc_stat_plot_settings.txt"))
+        )
+
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.CLEAR))
+        assertEquals(StatPlotScreen.MAIN, state.screen)
+        assertEquals(1, state.selectedMainItem)
+    }
+
+    @Test
+    fun statPlotEditorUsesTypeSpecificFrequencyAndAxisFields() {
+        val controller = CalculatorController()
+        dispatchSecond(controller, CalculatorKey.Y_EQUALS)
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DIGIT_1))
+        val state = controller.state.statPlot!!
+        val plot = StatPlotSettingsMemory.plot(0)
+
+        plot.type = StatPlotType.HISTOGRAM
+        assertFalse(StatPlotSettingsMemory.typeRendersOnGraph(plot.type))
+        state.selectedEditorRow = 4
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        assertEquals("L3", plot.yList)
+
+        plot.type = StatPlotType.BOX
+        state.selectedEditorRow = 4
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.DOWN))
+        assertEquals(4, state.selectedEditorRow)
+
+        plot.type = StatPlotType.RELATIVE_FREQUENCY
+        controller.dispatch(CalculatorInputEvent(CalculatorKey.RIGHT))
+        assertEquals(StatPlotDataAxis.Y, plot.dataAxis)
+        assertTrue(StatPlotSettingsMemory.typeRendersOnGraph(StatPlotType.SCATTER))
+        assertTrue(StatPlotSettingsMemory.typeRendersOnGraph(StatPlotType.LINE))
     }
 
     @Test
@@ -2033,6 +2116,18 @@ class CalculatorRegressionTest {
             .get(FormatSettingsMemory) as MutableList<Int>
         selectedOptions.indices.forEach { selectedOptions[it] = 0 }
         setField(FormatSettingsMemory, "selectedSettingIndex", 0)
+    }
+
+    private fun resetStatPlotMemory() {
+        repeat(StatPlotSettingsMemory.size()) { index ->
+            val plot = StatPlotSettingsMemory.plot(index)
+            plot.enabled = false
+            plot.type = StatPlotType.SCATTER
+            plot.xList = "L1"
+            plot.yList = "L2"
+            plot.mark = StatPlotMark.OPEN_SQUARE
+            plot.dataAxis = StatPlotDataAxis.X
+        }
     }
 
     private fun setField(target: Any, name: String, value: Any?) {

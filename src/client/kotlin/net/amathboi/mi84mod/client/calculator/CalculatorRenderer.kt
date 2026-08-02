@@ -6,11 +6,13 @@ import kotlin.math.roundToInt
 import net.amathboi.mi84mod.client.calculator.controller.CalculatorController
 import net.amathboi.mi84mod.client.calculator.controller.ListEditorController
 import net.amathboi.mi84mod.client.calculator.controller.TableViewController
+import net.amathboi.mi84mod.client.calculator.controller.StatPlotViewController
 import net.amathboi.mi84mod.client.calculator.input.ModifierLayer
 import net.amathboi.mi84mod.client.calculator.ui.CalculatorView
 import net.amathboi.mi84mod.client.calculator.ui.FractionTemplateState
 import net.amathboi.mi84mod.client.calculator.ui.FunctionMenuTab
 import net.amathboi.mi84mod.client.calculator.ui.ZoomTab
+import net.amathboi.mi84mod.client.calculator.ui.StatPlotScreen
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiGraphics
 
@@ -108,6 +110,7 @@ class CalculatorRenderer(private val controller: CalculatorController) {
             CalculatorView.Y_EQUALS -> renderYEqualsDisplay(guiGraphics)
             CalculatorView.WINDOW -> renderWindowDisplay(guiGraphics)
             CalculatorView.TABLE_SETUP -> renderTableSetupDisplay(guiGraphics)
+            CalculatorView.STAT_PLOT -> renderStatPlotDisplay(guiGraphics)
             CalculatorView.FORMAT -> renderFormatDisplay(guiGraphics)
             CalculatorView.MODE -> renderModeDisplay(guiGraphics)
             CalculatorView.ZOOM -> renderZoomDisplay(guiGraphics)
@@ -569,6 +572,183 @@ class CalculatorRenderer(private val controller: CalculatorController) {
                 blink = settingIndex == FormatSettingsMemory.selectedSettingIndex
             )
         }
+    }
+
+    /** Draws the approved two-line STAT PLOT summary or nested per-plot editor tabs. */
+    private fun renderStatPlotDisplay(guiGraphics: GuiGraphics) {
+        val plotState = state.statPlot ?: return
+        val scaleX = width.toFloat() / TEXTURE_WIDTH
+        val scaleY = height.toFloat() / TEXTURE_HEIGHT
+        val left = (x + (DISPLAY_LEFT + DISPLAY_PADDING) * scaleX).toInt()
+        val top = editorDisplayTop(scaleY)
+
+        if (plotState.screen == StatPlotScreen.MAIN) {
+            renderStatPlotMain(guiGraphics, plotState.selectedMainItem, left, top)
+        } else {
+            renderStatPlotEditor(guiGraphics, left, top)
+        }
+    }
+
+    private fun renderStatPlotMain(
+        guiGraphics: GuiGraphics,
+        selectedItem: Int,
+        left: Int,
+        top: Int
+    ) {
+        drawDisplayText(guiGraphics, "STAT PLOT", left, top)
+        repeat(StatPlotSettingsMemory.size()) { plotIndex ->
+            val plot = StatPlotSettingsMemory.plot(plotIndex)
+            val firstLineY = top + (1 + plotIndex * 2) * DISPLAY_LINE_HEIGHT
+            val secondLineY = firstLineY + DISPLAY_LINE_HEIGHT
+            val numberPrefix = "${plotIndex + 1}:"
+            val firstLine =
+                "$numberPrefix Stat Plot ${plotIndex + 1}...${if (plot.enabled) "On" else "Off"}"
+            val typeLabel = plot.type.displayName +
+                if (StatPlotSettingsMemory.typeRendersOnGraph(plot.type)) "" else " [deferred]"
+            val secondLine = when (plot.type) {
+                StatPlotType.HISTOGRAM, StatPlotType.MODIFIED_BOX ->
+                    "$typeLabel ${plot.xList} F:${plot.yList} ${plot.mark.displayName}"
+                StatPlotType.BOX ->
+                    "$typeLabel ${plot.xList} F:${plot.yList}"
+                StatPlotType.RELATIVE_FREQUENCY ->
+                    "$typeLabel ${plot.xList} Axis:${plot.dataAxis} ${plot.mark.displayName}"
+                else ->
+                    "$typeLabel ${plot.xList} ${plot.yList} ${plot.mark.displayName}"
+            }
+            val selected = selectedItem == plotIndex
+            drawDisplayText(guiGraphics, firstLine, left, firstLineY, plot.color)
+            if (selected) renderStatPlotNumberSelection(
+                guiGraphics,
+                numberPrefix,
+                left,
+                firstLineY
+            )
+            drawDisplayText(guiGraphics, secondLine, left, secondLineY, plot.color)
+        }
+
+        listOf("4: PlotsOn", "5: PlotsOff").forEachIndexed { index, label ->
+            val itemIndex = index + StatPlotSettingsMemory.size()
+            val lineY = top + (7 + index) * DISPLAY_LINE_HEIGHT
+            drawDisplayText(guiGraphics, label, left, lineY)
+            if (selectedItem == itemIndex) {
+                renderStatPlotNumberSelection(
+                    guiGraphics,
+                    "${itemIndex + 1}:",
+                    left,
+                    lineY
+                )
+            }
+        }
+    }
+
+    private fun renderStatPlotNumberSelection(
+        guiGraphics: GuiGraphics,
+        prefix: String,
+        left: Int,
+        lineY: Int
+    ) {
+        val prefixWidth = measureDisplayText(prefix).coerceAtLeast(2)
+        guiGraphics.fill(
+            left - MODE_SELECTION_PADDING,
+            lineY - 1,
+            left + prefixWidth + MODE_SELECTION_PADDING,
+            lineY + DISPLAY_LINE_HEIGHT,
+            MODE_SELECTION_COLOR
+        )
+        drawDisplayText(guiGraphics, prefix, left, lineY, DISPLAY_INVERTED_TEXT_COLOR)
+    }
+
+    private fun renderStatPlotEditor(guiGraphics: GuiGraphics, left: Int, top: Int) {
+        val plotState = state.statPlot ?: return
+        var tabLeft = left
+        repeat(StatPlotSettingsMemory.size()) { plotIndex ->
+            val label = "PLOT${plotIndex + 1}"
+            val plot = StatPlotSettingsMemory.plot(plotIndex)
+            if (plotIndex == plotState.selectedPlotIndex) {
+                renderInvertedRow(guiGraphics, label, tabLeft, top)
+            } else {
+                drawDisplayText(guiGraphics, label, tabLeft, top, plot.color)
+            }
+            tabLeft += measureDisplayText("$label  ")
+        }
+
+        val plot = StatPlotSettingsMemory.plot(plotState.selectedPlotIndex)
+        val enabledText = if (plot.enabled) "On" else "Off"
+        renderStatPlotEditorRow(
+            guiGraphics,
+            "On/Off: Off On",
+            enabledText,
+            top + DISPLAY_LINE_HEIGHT,
+            rowIndex = 1,
+            left = left
+        )
+        renderStatPlotEditorRow(
+            guiGraphics,
+            "Type: ${plot.type.displayName}${
+                if (StatPlotSettingsMemory.typeRendersOnGraph(plot.type)) "" else " [deferred]"
+            }",
+            plot.type.displayName,
+            top + DISPLAY_LINE_HEIGHT * 2,
+            rowIndex = 2,
+            left = left
+        )
+        renderStatPlotEditorRow(
+            guiGraphics,
+            "${if (plot.type == StatPlotType.RELATIVE_FREQUENCY) "Data List" else "XList"}: ${plot.xList}",
+            plot.xList,
+            top + DISPLAY_LINE_HEIGHT * 3,
+            rowIndex = 3,
+            left = left
+        )
+        renderStatPlotEditorRow(
+            guiGraphics,
+            when (plot.type) {
+                StatPlotType.HISTOGRAM, StatPlotType.MODIFIED_BOX, StatPlotType.BOX ->
+                    "Freq: ${plot.yList}"
+                StatPlotType.RELATIVE_FREQUENCY -> "Data Axis: ${plot.dataAxis}"
+                else -> "YList: ${plot.yList}"
+            },
+            if (plot.type == StatPlotType.RELATIVE_FREQUENCY) {
+                plot.dataAxis.name
+            } else {
+                plot.yList
+            },
+            top + DISPLAY_LINE_HEIGHT * 4,
+            rowIndex = 4,
+            left = left
+        )
+        if (plot.type != StatPlotType.BOX) {
+            renderStatPlotEditorRow(
+                guiGraphics,
+                "Mark: ${StatPlotMark.entries.joinToString(" ") { it.displayName }}",
+                plot.mark.displayName,
+                top + DISPLAY_LINE_HEIGHT * 5,
+                rowIndex = 5,
+                left = left
+            )
+        }
+    }
+
+    private fun renderStatPlotEditorRow(
+        guiGraphics: GuiGraphics,
+        rowText: String,
+        selectedText: String,
+        lineY: Int,
+        rowIndex: Int,
+        left: Int
+    ) {
+        drawDisplayText(guiGraphics, rowText, left, lineY)
+        val optionStart = rowText.lastIndexOf(selectedText).coerceAtLeast(0)
+        renderModeSelection(
+            guiGraphics,
+            rowText,
+            selectedText,
+            optionStart,
+            optionStart + selectedText.length,
+            left,
+            lineY,
+            blink = state.statPlot?.selectedEditorRow == rowIndex
+        )
     }
 
     /** Draws the scrollable Mode list with inverted chosen options and a blinking active choice. */

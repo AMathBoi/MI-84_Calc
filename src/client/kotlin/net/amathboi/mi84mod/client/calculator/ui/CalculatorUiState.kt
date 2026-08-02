@@ -8,6 +8,7 @@ enum class CalculatorView {
     Y_EQUALS,
     WINDOW,
     TABLE_SETUP,
+    STAT_PLOT,
     FORMAT,
     MODE,
     ZOOM,
@@ -70,4 +71,5 @@ class CalculatorUiState {
     var fractionTemplate: FractionTemplateState? = null
     var listEditor: ListEditorState? = null
     var table: TableViewState? = null
+    var statPlot: StatPlotViewState? = null
 }

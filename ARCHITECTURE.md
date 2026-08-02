@@ -6,6 +6,10 @@ The calculator is a client-only Fabric overlay attached to the Minecraft invento
 calculator logic is intentionally separated from Minecraft widget APIs so input behavior can be
 tested without starting the game.
 
+Phase 6 is complete for its approved scope. PolarGC and the Histogram, modified-box, regular-box,
+and relative-frequency plot renderers remain explicit prerequisite-bound deferrals rather than open
+Phase 6 work.
+
 ## Runtime flow
 
 ```text
@@ -48,7 +52,8 @@ CalculatorWidget / Minecraft GuiGraphics
 - `input/CalculatorCommand.kt` maps physical keys and modifier layers to typed logical commands.
 - Primary commands are exhaustive. Phase 1 scalar 2nd meanings, Phase 2 ENTRY/INS and Alpha A-Z/θ,
   plus the approved Phase 4 TEST, ANGLE, MATH-family, VARS, F1 FRAC, F2 FUNC, and F4 YVAR menus
-  and the approved Phase 6 TBLSET/FORMAT/TABLE views have explicit typed commands; remaining unimplemented 2nd and Alpha meanings are explicit
+  and the approved Phase 6 TBLSET/FORMAT/TABLE/STAT PLOT configuration views have explicit typed
+  commands; remaining unimplemented 2nd and Alpha meanings are explicit
   placeholders.
 
 Visible legends are not identifiers. Code should compare `CalculatorKey.SIN`, not `"sin"`, and
@@ -62,6 +67,8 @@ should never infer behavior from displayed text.
   cell-entry buffer; it does not render the table.
 - `controller/TableViewController.kt` owns packed graph-table columns, scrolling, Auto/Ask X and Y
   behavior, Y-header editing, and cell evaluation; it does not render the table.
+- `controller/StatPlotViewController.kt` owns the two-line STAT PLOT menu, global enable actions,
+  nested Plot1/2/3 editor tabs, and typed setting changes; it does not draw plots.
 - `controller/DispatchResult.kt` distinguishes handled input, unsupported primary keys, and planned
   modifier placeholders.
 - `ui/CalculatorUiState.kt` owns transient state: active view, modifier layer, history/ENTRY
@@ -169,6 +176,10 @@ Persistent calculator content does not belong in `CalculatorUiState`.
 - `FormatSettingsMemory` stores only renderer-backed choices: rectangular trace-coordinate
   visibility plus graph grid, axes, and axis-label presentation. PolarGC remains visible but
   unavailable until polar graph functions exist.
+- `StatPlotSettingsMemory` stores three fixed-color plot configurations with On/Off, type, X/Y list,
+  type-specific list/axis fields, and marks. `StatPlotGraphData` validates paired real lists and
+  clips Line segments. The graph renderer currently consumes only Scatter and Line settings;
+  distribution plot types remain visibly marked `[deferred]` in both configuration views.
 - `CalculatorPersistence` is the only general file-writing boundary. New stores must use it rather
   than writing files directly.
 - Existing file formats must remain backward compatible unless a documented migration and regression

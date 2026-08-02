@@ -25,7 +25,7 @@ Y=, or Window depending on the active view.
 
 | Physical key | Normal command | Normal status | 2nd command | 2nd status | Alpha command | Alpha status |
 |---|---|---|---|---|---|---|
-| Y= | Open Y= view | Complete | STAT PLOT menu | Deferred — subsystem and visual review | F1 FRAC function-menu overlay | Complete — approved Phase 4 overlay and fraction template |
+| Y= | Open Y= view | Complete | STAT PLOT menu | Partial — configuration plus Scatter/Line graph rendering complete; distribution plot types deferred | F1 FRAC function-menu overlay | Complete — approved Phase 4 overlay and fraction template |
 | Window | Open Window view | Complete | TBLSET screen | Complete — approved Phase 6 TABLE SETUP with persistent values and Auto/Ask choices | F2 FUNC function-menu overlay | Partial — approved Phase 4 overlay; numerical calculus rows visibly unavailable |
 | Zoom | Open Zoom view | Complete | FORMAT screen | Partial — renderer-backed settings complete; PolarGC visible but deferred with polar graph functions | F3 MTRX shortcut menu | Deferred — subsystem and visual review |
 | Trace | Begin trace in Graph | Complete | CALC graph-analysis menu | Deferred — visual review | F4 YVAR shortcut menu | Complete — approved two-column Function Y1–Y9 menu |

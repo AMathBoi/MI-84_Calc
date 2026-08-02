@@ -5,6 +5,7 @@ import java.math.RoundingMode
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.atan2
+import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
@@ -64,6 +65,7 @@ class CalculatorGraphRenderer(private val controller: CalculatorController) {
                 )
             }
         }
+        renderStatPlots(guiGraphics, left, right, top, bottom, graphWindow)
         renderGraphTrace(guiGraphics, left, right, top, bottom, graphWindow)
         renderZoomGraphSelection(guiGraphics, left, right, top, bottom, graphWindow)
     }
@@ -334,6 +336,116 @@ class CalculatorGraphRenderer(private val controller: CalculatorController) {
                 }
             }
             previous = current
+        }
+    }
+
+    /** Phase 6 graph integration begins with the point-based Scatter and Line types. */
+    private fun renderStatPlots(
+        guiGraphics: GuiGraphics,
+        left: Int,
+        right: Int,
+        top: Int,
+        bottom: Int,
+        graphWindow: GraphWindow
+    ) {
+        guiGraphics.enableScissor(left, top, right + 1, bottom + 1)
+        repeat(StatPlotSettingsMemory.size()) { plotIndex ->
+            val plot = StatPlotSettingsMemory.plot(plotIndex)
+            if (!plot.enabled || !StatPlotSettingsMemory.typeRendersOnGraph(plot.type)) {
+                return@repeat
+            }
+            val points = StatPlotGraphData.points(plotIndex) ?: return@repeat
+            var previous: StatPlotPoint? = null
+            points.forEach { point ->
+                if (point == null) {
+                    previous = null
+                    return@forEach
+                }
+                if (plot.type == StatPlotType.LINE) {
+                    previous?.let { prior ->
+                        StatPlotGraphData.clipSegment(
+                            prior,
+                            point,
+                            graphWindow.xMin,
+                            graphWindow.xMax,
+                            graphWindow.yMin,
+                            graphWindow.yMax
+                        )?.let { segment ->
+                            drawStatPlotSegment(
+                                guiGraphics,
+                                segment,
+                                plot.color,
+                                left,
+                                right,
+                                top,
+                                bottom,
+                                graphWindow
+                            )
+                        }
+                    }
+                }
+                if (point.x in graphWindow.xMin..graphWindow.xMax &&
+                    point.y in graphWindow.yMin..graphWindow.yMax
+                ) {
+                    drawStatPlotMark(
+                        guiGraphics,
+                        graphXToPixel(point.x, left, right, graphWindow),
+                        graphYToPixel(point.y, top, bottom, graphWindow),
+                        plot.mark,
+                        plot.color
+                    )
+                }
+                previous = point
+            }
+        }
+        guiGraphics.disableScissor()
+    }
+
+    private fun drawStatPlotSegment(
+        guiGraphics: GuiGraphics,
+        segment: StatPlotSegment,
+        color: Int,
+        left: Int,
+        right: Int,
+        top: Int,
+        bottom: Int,
+        graphWindow: GraphWindow
+    ) {
+        val startX = graphXToPixel(segment.start.x, left, right, graphWindow)
+        val startY = graphYToPixel(segment.start.y, top, bottom, graphWindow)
+        val endX = graphXToPixel(segment.end.x, left, right, graphWindow)
+        val endY = graphYToPixel(segment.end.y, top, bottom, graphWindow)
+        val steps = max(abs(endX - startX), abs(endY - startY)).coerceAtLeast(1)
+        repeat(steps + 1) { step ->
+            val progress = step.toDouble() / steps
+            val pixelX = (startX + (endX - startX) * progress).roundToInt()
+            val pixelY = (startY + (endY - startY) * progress).roundToInt()
+            guiGraphics.fill(pixelX, pixelY, pixelX + 1, pixelY + 1, color)
+        }
+    }
+
+    private fun drawStatPlotMark(
+        guiGraphics: GuiGraphics,
+        pixelX: Int,
+        pixelY: Int,
+        mark: StatPlotMark,
+        color: Int
+    ) {
+        when (mark) {
+            StatPlotMark.OPEN_SQUARE -> {
+                guiGraphics.fill(pixelX - 2, pixelY - 2, pixelX + 3, pixelY - 1, color)
+                guiGraphics.fill(pixelX - 2, pixelY + 2, pixelX + 3, pixelY + 3, color)
+                guiGraphics.fill(pixelX - 2, pixelY - 1, pixelX - 1, pixelY + 2, color)
+                guiGraphics.fill(pixelX + 2, pixelY - 1, pixelX + 3, pixelY + 2, color)
+            }
+            StatPlotMark.PLUS -> {
+                guiGraphics.fill(pixelX - 2, pixelY, pixelX + 3, pixelY + 1, color)
+                guiGraphics.fill(pixelX, pixelY - 2, pixelX + 1, pixelY + 3, color)
+            }
+            StatPlotMark.DOT ->
+                guiGraphics.fill(pixelX - 1, pixelY - 1, pixelX + 2, pixelY + 2, color)
+            StatPlotMark.SMALL_DOT ->
+                guiGraphics.fill(pixelX, pixelY, pixelX + 1, pixelY + 1, color)
         }
     }
 

@@ -34,6 +34,7 @@ import net.amathboi.mi84mod.client.calculator.ui.GraphWindow
 import net.amathboi.mi84mod.client.calculator.ui.ListEditorState
 import net.amathboi.mi84mod.client.calculator.ui.TraceState
 import net.amathboi.mi84mod.client.calculator.ui.TableViewState
+import net.amathboi.mi84mod.client.calculator.ui.StatPlotViewState
 import net.amathboi.mi84mod.client.calculator.ui.ZoomGraphOperation
 import net.amathboi.mi84mod.client.calculator.ui.ZoomGraphState
 import net.amathboi.mi84mod.client.calculator.ui.ZoomMenuOption
@@ -196,6 +197,10 @@ class CalculatorController(
             CalculatorView.Y_EQUALS -> YEqualsViewController.handle(command, state)
             CalculatorView.WINDOW -> WindowViewController.handle(command, state)
             CalculatorView.TABLE_SETUP -> TableSetupViewController.handle(command, state)
+            CalculatorView.STAT_PLOT -> StatPlotViewController.handle(
+                command,
+                state.statPlot ?: StatPlotViewState().also { state.statPlot = it }
+            )
             CalculatorView.FORMAT -> FormatViewController.handle(command)
             CalculatorView.MODE -> ModeViewController.handle(command)
             CalculatorView.ZOOM -> handleZoom(command, graphAspect)
@@ -417,6 +422,9 @@ class CalculatorController(
         }
         if (view == CalculatorView.TABLE && state.table == null) {
             state.table = TableViewState()
+        }
+        if (view == CalculatorView.STAT_PLOT && state.statPlot == null) {
+            state.statPlot = StatPlotViewState()
         }
         if (view == CalculatorView.TABLE) {
             state.table?.let(TableViewController::open)

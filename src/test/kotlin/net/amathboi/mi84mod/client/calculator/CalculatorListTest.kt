@@ -267,6 +267,62 @@ class CalculatorListTest {
         assertEquals(listOf("10", "20", "30"), CalculatorListMemory.value(CalculatorListName.L2).values.map { it.real.toPlainString() })
     }
 
+    @Test
+    fun statPlotGraphDataPairsRealListsAndRejectsMismatchedDimensions() {
+        CalculatorListMemory.set(
+            CalculatorListName.L1,
+            CalculatorListValue(listOf("-20", "0", "5").map { CalculatorScalarValue(BigDecimal(it)) })
+        )
+        CalculatorListMemory.set(
+            CalculatorListName.L2,
+            CalculatorListValue(listOf("1", "2", "3").map { CalculatorScalarValue(BigDecimal(it)) })
+        )
+        val plot = StatPlotSettingsMemory.plot(0)
+        plot.xList = "L1"
+        plot.yList = "L2"
+
+        assertEquals(
+            listOf(
+                StatPlotPoint(-20.0, 1.0),
+                StatPlotPoint(0.0, 2.0),
+                StatPlotPoint(5.0, 3.0)
+            ),
+            StatPlotGraphData.points(0)
+        )
+
+        CalculatorListMemory.set(
+            CalculatorListName.L2,
+            CalculatorListValue(listOf(CalculatorScalarValue(BigDecimal.ONE)))
+        )
+        assertEquals(null, StatPlotGraphData.points(0))
+    }
+
+    @Test
+    fun statPlotLineSegmentsClipToTheGraphWindow() {
+        assertEquals(
+            StatPlotSegment(StatPlotPoint(-10.0, 0.0), StatPlotPoint(10.0, 0.0)),
+            StatPlotGraphData.clipSegment(
+                StatPlotPoint(-20.0, 0.0),
+                StatPlotPoint(20.0, 0.0),
+                -10.0,
+                10.0,
+                -10.0,
+                10.0
+            )
+        )
+        assertEquals(
+            null,
+            StatPlotGraphData.clipSegment(
+                StatPlotPoint(-20.0, 20.0),
+                StatPlotPoint(20.0, 20.0),
+                -10.0,
+                10.0,
+                -10.0,
+                10.0
+            )
+        )
+    }
+
     @Suppress("UNCHECKED_CAST")
     private fun resetListMemoryInMemory() {
         val values = CalculatorListMemory.javaClass.getDeclaredField("values").apply {
