@@ -74,7 +74,19 @@ val verifyCalculatorArchitecture by tasks.registering {
     val widgetSource = calculatorSource.resolve("CalculatorWidget.kt")
     val architectureDocument = file("ARCHITECTURE.md")
     val buttonMatrix = file("BUTTON_MATRIX.md")
-    inputs.files(fileTree(calculatorSource), architectureDocument, buttonMatrix)
+    val readme = file("README.md")
+    val changelog = file("CHANGELOG.md")
+    val featureStatus = file("FEATURE_STATUS.md")
+    val releaseVersion = project.version.toString()
+    inputs.property("releaseVersion", releaseVersion)
+    inputs.files(
+        fileTree(calculatorSource),
+        architectureDocument,
+        buttonMatrix,
+        readme,
+        changelog,
+        featureStatus
+    )
 
     doLast {
         nonMinecraftLayers.flatMap { directory ->
@@ -89,6 +101,15 @@ val verifyCalculatorArchitecture by tasks.registering {
         }
         check(architectureDocument.isFile && buttonMatrix.isFile) {
             "ARCHITECTURE.md and BUTTON_MATRIX.md are required maintenance contracts"
+        }
+        check("Version $releaseVersion" in readme.readText()) {
+            "README.md must identify release version $releaseVersion"
+        }
+        check("version $releaseVersion" in featureStatus.readText()) {
+            "FEATURE_STATUS.md must identify release version $releaseVersion"
+        }
+        check("## $releaseVersion -" in changelog.readText()) {
+            "CHANGELOG.md must contain a release section for $releaseVersion"
         }
     }
 }

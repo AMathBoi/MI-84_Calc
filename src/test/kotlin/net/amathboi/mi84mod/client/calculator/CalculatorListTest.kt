@@ -75,6 +75,26 @@ class CalculatorListTest {
     }
 
     @Test
+    fun fullListDoesNotExposeOrCommitAThousandthElement() {
+        val fullList = CalculatorListValue(
+            List(CalculatorListValue.MAX_LIST_LENGTH) {
+                CalculatorScalarValue(BigDecimal.ZERO)
+            }
+        )
+        CalculatorListMemory.set(CalculatorListName.L1, fullList)
+        val state = ListEditorState().also {
+            it.selectedRowIndex = CalculatorListValue.MAX_LIST_LENGTH
+            it.entry = "7"
+            it.entryCursor = 1
+        }
+
+        ListEditorController.handle(CalculatorCommand.Enter, state)
+        assertEquals(CalculatorListValue.MAX_LIST_LENGTH, CalculatorListMemory.value(CalculatorListName.L1).dimension)
+        ListEditorController.handle(CalculatorCommand.Down, state)
+        assertEquals(CalculatorListValue.MAX_LIST_LENGTH - 1, state.selectedRowIndex)
+    }
+
+    @Test
     fun listHeaderLoadsAndValidatesTheEditableLiteral() {
         CalculatorListMemory.set(
             CalculatorListName.L1,
@@ -194,6 +214,21 @@ class CalculatorListTest {
         assertEquals("{9 9 9}", submit("Fill(9,L1)"))
         assertEquals(listOf("9", "9", "9"), CalculatorListMemory.value(CalculatorListName.L1).values.map { it.real.toPlainString() })
         CalculatorListMemory.clear(CalculatorListName.L1)
+    }
+
+    @Test
+    fun sequenceSubstitutionChangesOnlyCompleteScalarVariableTokens() {
+        CalculatorVariableMemory.set(CalculatorVariable.A, BigDecimal("8"))
+        CalculatorDisplayMemory.appendMenuToken("5")
+        CalculatorDisplayMemory.submit()
+
+        CalculatorDisplayMemory.appendMenuToken("seq(Ans+A,A,1,2)")
+        CalculatorDisplayMemory.submit()
+        assertEquals("{6 7}", CalculatorDisplayMemory.allSubmitted().last().result)
+
+        CalculatorDisplayMemory.appendMenuToken("seq(logBASE(A,2)+B,B,1,2)")
+        CalculatorDisplayMemory.submit()
+        assertEquals("{4 5}", CalculatorDisplayMemory.allSubmitted().last().result)
     }
 
     @Test

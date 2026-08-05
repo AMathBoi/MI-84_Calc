@@ -85,6 +85,17 @@ class CalculatorRegressionTest {
     }
 
     @Test
+    fun complexDivisionRemainsStableAcrossExtremeFiniteMagnitudes() {
+        selectRectangularComplexMode()
+        listOf("1EE200i/(1EE200i)", "1EE-200i/(1EE-200i)").forEach { expression ->
+            submitRaw(expression)
+            val result = CalculatorDisplayMemory.allSubmitted().last()
+            assertEquals("1", result.result, expression)
+            assertEquals(0, result.rawResult!!.compareTo(BigDecimal.ONE))
+        }
+    }
+
+    @Test
     fun exponentiationBindsMoreTightlyThanUnaryMinus() {
         enter("-2^2")
         CalculatorDisplayMemory.submit()
@@ -116,6 +127,30 @@ class CalculatorRegressionTest {
             WindowSettingsMemory.setGraphWindow("-10000000000000", "10", "1", "-10", "10", "1")
         )
         assertEquals(validWindow, WindowSettingsMemory.snapshot())
+    }
+
+    @Test
+    fun xResolutionRequiresAnExactTi84ValueFromOneThroughEight() {
+        listOf("0", "0.5", "1.5", "9").forEach { xResolution ->
+            assertFalse(
+                WindowSettingsMemory.setGraphWindow(
+                    "-10", "10", "1", "-10", "10", "1", xResolution
+                ),
+                xResolution
+            )
+        }
+
+        assertTrue(
+            WindowSettingsMemory.setGraphWindow("-10", "10", "1", "-10", "10", "1", "2+2")
+        )
+        assertEquals(4, CalculatorController().readGraphWindow()!!.xResolution)
+        assertTrue(
+            WindowSettingsMemory.setGraphWindow("-10", "10", "1", "-10", "10", "1", "8")
+        )
+        assertEquals(8, CalculatorController().readGraphWindow()!!.xResolution)
+
+        WindowSettingsMemory.restore(listOf("-10", "10", "1", "-10", "10", "1", "2.5", "5/66", "5/33"))
+        assertEquals(null, CalculatorController().readGraphWindow())
     }
 
     @Test

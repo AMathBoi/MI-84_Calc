@@ -32,7 +32,7 @@ Y=, or Window depending on the active view.
 | Graph | Open Graph view | Complete | TABLE view | Complete — approved Phase 6 graph table with Auto/Ask values and editable Y headers | F5 context-sensitive special menu | Deferred — visual review |
 | 2nd | Toggle one-shot 2nd layer | Complete | Toggle/cancel 2nd | Complete | Switch from Alpha to 2nd | Complete |
 | Mode | Open Mode view | Complete | Quit: return to Home | Complete | No shifted function | No shifted function |
-| Del | Forward delete | Complete | INS: toggle insert/overwrite editing; create a named list when a STAT→Edit header is selected | Partial — context-specific named-list creation complete | No shifted function | No shifted function |
+| Del | Forward delete | Complete | INS: toggle insert/overwrite editing; create a named list when a STAT→Edit header is selected | Complete — context-sensitive behavior with a visible insert cursor | No shifted function | No shifted function |
 | Down | Move/select down | Complete | No shifted function | No shifted function | No shifted function | No shifted function |
 | Up | Move/select up | Complete | No shifted function | No shifted function | No shifted function | No shifted function |
 | Alpha | Toggle one-shot Alpha layer | Complete | A-LOCK: persistent Alpha lock | Complete | Toggle/cancel Alpha | Complete |
@@ -52,8 +52,8 @@ Y=, or Window depending on the active view.
 | ^ | Insert exponent operator | Complete | Insert `π` | Complete | Insert `H` | Complete |
 | x² | Apply/insert square | Complete | Insert linear `sqrt(` | Complete | Insert `I` | Complete |
 | , | Insert comma | Partial: evaluates implemented multi-argument scalar functions; broader function families remain deferred | Insert `EE` exponent marker | Complete — exponent limited to `-308..308` with explicit range errors | Insert `J` | Complete |
-| ( | Insert opening parenthesis | Complete | Insert `{` list opener | Partial — list-header editor only | Insert `K` | Complete |
-| ) | Insert closing parenthesis | Complete | Insert `}` list closer | Partial — list-header editor only | Insert `L` | Complete |
+| ( | Insert opening parenthesis | Complete | Insert `{` list opener | Complete — Home and supported expression editors plus list-header editing | Insert `K` | Complete |
+| ) | Insert closing parenthesis | Complete | Insert `}` list closer | Complete — Home and supported expression editors plus list-header editing | Insert `L` | Complete |
 | ÷ | Insert division operator | Complete | Insert Euler's constant `e` | Complete | Insert `M` | Complete |
 | log | Insert `log(` | Complete | Insert `10^(` | Complete | Insert `N` | Complete |
 | 7 | Insert digit / Zoom hotkey 7 | Complete | Insert sequence variable `u` | Deferred — subsystem | Insert `O` | Complete |
@@ -61,14 +61,14 @@ Y=, or Window depending on the active view.
 | 9 | Insert digit / Zoom hotkey 9 | Complete | Insert sequence variable `w` | Deferred — subsystem | Insert `Q` | Complete |
 | × | Insert multiplication operator | Complete | Insert `[` matrix opener | Deferred — subsystem | Insert `R` | Complete |
 | ln | Insert `ln(` | Complete | Insert `e^(` | Complete | Insert `S` | Complete |
-| 4 | Insert digit / menu hotkey 4 | Complete | Insert list name `L4` | Deferred — subsystem | Insert `T` | Complete |
-| 5 | Insert digit / Zoom hotkey 5 | Complete | Insert list name `L5` | Deferred — subsystem | Insert `U` | Complete |
-| 6 | Insert digit / Zoom hotkey 6 | Complete | Insert list name `L6` | Deferred — subsystem | Insert `V` | Complete |
+| 4 | Insert digit / menu hotkey 4 | Complete | Insert list name `L4` | Complete | Insert `T` | Complete |
+| 5 | Insert digit / Zoom hotkey 5 | Complete | Insert list name `L5` | Complete | Insert `U` | Complete |
+| 6 | Insert digit / Zoom hotkey 6 | Complete | Insert list name `L6` | Complete | Insert `V` | Complete |
 | − | Insert subtraction operator | Complete | Insert `]` matrix closer | Deferred — subsystem | Insert `W` | Complete |
 | sto→ | Insert store operator | Complete for scalar `expression→variable` | RCL variable-selection prompt | Deferred — visual review | Insert `X` | Complete |
-| 1 | Insert digit / menu hotkey 1 | Complete | Insert list name `L1` | Deferred — subsystem | Insert `Y` | Complete |
-| 2 | Insert digit / menu hotkey 2 | Complete | Insert list name `L2` | Deferred — subsystem | Insert `Z` | Complete |
-| 3 | Insert digit / menu hotkey 3 | Complete | Insert list name `L3` | Deferred — subsystem | Insert `θ` | Complete |
+| 1 | Insert digit / menu hotkey 1 | Complete | Insert list name `L1` | Complete | Insert `Y` | Complete |
+| 2 | Insert digit / menu hotkey 2 | Complete | Insert list name `L2` | Complete | Insert `Z` | Complete |
+| 3 | Insert digit / menu hotkey 3 | Complete | Insert list name `L3` | Complete | Insert `θ` | Complete |
 | + | Insert addition operator | Complete | MEM menu | Deferred — visual review | Insert quote `"` | Deferred — subsystem |
 | On | Wake/cancel calculator operation | Deferred — visual review | OFF: turn LCD off while retaining memory | Deferred — visual review | No shifted function | No shifted function |
 | 0 | Insert digit / Zoom hotkey 0 | Complete | No shifted function | No shifted function | Insert space | Deferred — subsystem |
@@ -83,9 +83,14 @@ Y=, or Window depending on the active view.
 | Home | Numeric editing, functions, operators, history navigation, submit |
 | Y= | Expression editing and equation selection |
 | Window | Numeric expression editing and setting selection |
+| TABLE SETUP | Numeric expression editing plus Auto/Ask selection |
+| TABLE | Auto/Ask X and Y cells, scrolling, and Y-header editing |
+| FORMAT | Persistent graph-format selection |
 | Mode | Four-way option/category navigation |
 | Zoom | Tabs, menu movement, physical numeric shortcuts, and physical Alpha A-G shortcuts |
 | Zoom Factors | Factor movement, selection, and physical numeric shortcuts 1-6 |
+| STAT menu / list editor | Tab navigation, real-list editing, header literals, and named-list creation |
+| STAT PLOT | Main actions, Plot1–Plot3 tabs, and persistent plot settings |
 | Compact token menu | Tabs, row navigation, physical numeric and Alpha A-D hotkeys where displayed, Enter selection, Clear cancellation, and direct-view exits |
 | Graph | Trace movement or interactive zoom cursor movement |
 

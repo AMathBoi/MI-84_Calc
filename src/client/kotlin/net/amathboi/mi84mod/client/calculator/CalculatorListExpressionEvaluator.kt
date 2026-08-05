@@ -143,8 +143,9 @@ object CalculatorListExpressionEvaluator {
         val indices = CalculatorListOperations.sequence(begin, end, step)
         return Value.List(
             CalculatorListValue(indices.values.map { index ->
-                val substituted = raw[0].replace(
-                    variable.symbol.toString(),
+                val substituted = ExpressionEditingTokens.substituteScalarVariable(
+                    raw[0],
+                    variable,
                     "(${index.real.toPlainString()})"
                 )
                 scalar(substituted).also {

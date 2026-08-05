@@ -1,10 +1,18 @@
 # MI-84 Calculator Mod — Project Context
 
+## Release baseline
+
+- Current release target: **0.3** for Minecraft 1.21.1 Fabric and Java 21.
+- Fabric metadata declares the project client-only; calculator behavior must not be required on a
+  dedicated server.
+- The 0.3 scope includes the reviewed real-list, TABLE/TBLSET, FORMAT, and STAT PLOT configuration
+  work, with only Scatter and Line plot rendering. Existing prerequisite-bound deferrals remain.
+
 ## Stack
 
 - **Fabric mod** for Minecraft, Kotlin source
 - `build.gradle.kts`: Fabric Loom remap, Kotlin 2.3.21, JVM 21
-- Split source sets: `main` (server/common) + `client`
+- Split source sets: `main` (metadata/common initializer) + `client`
 - Dependencies: fabric-loader, fabric-api, fabric-language-kotlin
 - Official Mojang mappings (not Yarn)
 
@@ -12,7 +20,7 @@
 
 | File | Purpose |
 |---|---|
-| `src/main/kotlin/.../Mi84_calc.kt` | Server-side `ModInitializer` stub |
+| `src/main/kotlin/.../Mi84_calc.kt` | Common load logger; Fabric metadata limits the mod to clients |
 | `src/client/kotlin/.../Mi84_calcClient.kt` | Hooks `InventoryScreen`, adds the `X` toggle and calculator overlay |
 | `src/client/kotlin/.../calculator/CalculatorWidget.kt` | Thin Minecraft widget adapter: texture, dragging, hit-testing, and input forwarding |
 | `src/client/kotlin/.../calculator/CalculatorRenderer.kt` | Shared LCD rendering and non-graph calculator views |
@@ -30,7 +38,7 @@
 | `src/client/kotlin/.../calculator/ui/StatPlotViewState.kt` | Transient STAT PLOT main/editor selection and active plot tab |
 | `src/client/kotlin/.../calculator/ui/CompactMenuState.kt` | Reusable non-Minecraft compact-menu definitions, tabs, items, availability, selection, and return target |
 | `src/client/kotlin/.../calculator/ui/FunctionMenuState.kt` | Bottom-tab F1–F4 overlay definitions, editor targets, typed actions, and transient structured fraction fields |
-| `src/client/kotlin/.../calculator/ExpressionEditingTokens.kt` | Shared atomic-token recognition, typed Y-function references, digit disambiguation, and operand-sign editing |
+| `src/client/kotlin/.../calculator/ExpressionEditingTokens.kt` | Shared atomic-token recognition, typed Y-function references, digit disambiguation, operand-sign editing, function vocabulary, and token-aware scalar substitution |
 | `src/client/kotlin/.../calculator/MathDisplayTokens.kt` | Pure recognition of complete/in-progress fraction, radical, and combinatoric display tokens |
 | `src/client/kotlin/.../calculator/CalculatorPosition.kt` | In-memory calculator position shared between inventory sessions |
 | `src/client/kotlin/.../calculator/CalculatorDisplayMemory.kt` | Persistent input/history store and real scalar expression evaluator |
@@ -38,7 +46,7 @@
 | `src/client/kotlin/.../calculator/CalculatorListMemory.kt` | Persistent typed built-in L1–L6 and ordered user-named list storage |
 | `src/client/kotlin/.../calculator/CalculatorListOperations.kt` | Pure list-domain operations kept outside rendering and routing |
 | `src/client/kotlin/.../calculator/CalculatorListExpressionEvaluator.kt` | Typed real-list expressions, LIST OPS/MATH routing, and correlated sorting |
-| `src/client/kotlin/.../calculator/ComplexExpressionEvaluator.kt` | Principal-value complex arithmetic/parser fallback for rectangular complex mode |
+| `src/client/kotlin/.../calculator/ComplexExpressionEvaluator.kt` | Principal-value complex arithmetic/parser fallback with guarded shared division for rectangular complex mode |
 | `src/client/kotlin/.../calculator/CalculatorPersistence.kt` | Logged temp-file persistence with atomic replacement where supported |
 | `src/client/kotlin/.../calculator/GraphNavigationMath.kt` | Testable trace clamping, large integer-bound helpers, and graph-segment continuity checks |
 | `src/client/kotlin/.../calculator/ModeSettingsMemory.kt` | Persistent Mode categories/options plus numeric-display and angle/complex mode accessors |
@@ -84,7 +92,7 @@
   - The gray LCD header strip from source-texture `(21, 49)` to `(418, 84)` always shows the active Number Display, Decimal Display, Answers, Complex Number Format, and Angle Unit values as one row of white text on every LCD view.
   - Its LCD has direct, in-overlay `HOME`, `Y_EQUALS`, `WINDOW`, `ZOOM`, `MODE`, and `GRAPH` views. The Y=, Window, Zoom, Mode, and Graph keys switch directly between their views; `2nd` + Mode (Quit) returns to Home from any calculator view.
   - The Y= view shows all nine color-coded `Y₁`–`Y₉` expressions at once. Up/down chooses an expression, left/right moves its forward-edit cursor, and the calculator's entry keys edit it, including `(−)` operand-sign toggling.
-  - The Window view shows `Xmin`, `Xmax`, `Xscl`, `Ymin`, `Ymax`, `Yscl`, `Xres`, `ΔX`, and `TraceStep` at once. Up/down chooses a setting and the calculator's entry keys edit it, including `(−)` operand-sign toggling.
+  - The Window view shows `Xmin`, `Xmax`, `Xscl`, `Ymin`, `Ymax`, `Yscl`, `Xres`, `ΔX`, and `TraceStep` at once. Up/down chooses a setting and the calculator's entry keys edit it, including `(−)` operand-sign toggling. Graph consumption and programmatic window changes accept only exact integer `Xres` values from 1 through 8.
   - `2nd` + Window opens the `TABLE SETUP` view. It persistently edits `TblStart` and `ΔTbl`, and left/right selects `Auto` or `Ask` independently for `Indpnt` and `Depend`; these settings control the TABLE view.
   - `2nd` + Graph opens TABLE. X stays fixed as the left column while only non-empty Y functions scroll through the remaining selectable columns. Auto X rows use `TblStart + row·ΔTbl`; Ask X rows use a list-style bottom `X=` editor. Dependent Auto evaluates immediately, while Ask evaluates a selected Y cell on Enter. Up from a Y column's first row opens a bottom `Yₙ=` header editor without changing its selected X row; the editor changes the same persistent function used by Y= and Graph. X's header and blank columns cannot be selected. Auto X can scroll through negative row offsets, and invalid cells show `ERR` without closing TABLE.
   - `2nd` + Zoom opens FORMAT. RectGC, coordinate visibility, off/dot/line grids, axes, axis labels, and trace-expression visibility are renderer-backed and persistent. PolarGC remains visible but unavailable until polar graph functions exist. Unsupported graph-color/asymptote options are not stored or displayed.
@@ -104,7 +112,7 @@
   - `Ans` resolves to the most recent valid real or rectangular-complex result and can be inserted explicitly with `2nd` + `(−)`. In an empty input, `+`, `-`, `*`, `/`, and `^` begin an `Ans` expression for the next user operand; square and reciprocal apply to `Ans`. Raw real and imaginary result components are persisted separately so display rounding does not reduce later `Ans` precision.
   - The real evaluator supports standard precedence, implicit multiplication (`8X`, `2(X+1)`, `3sin(X)`, `2π`, `2A`), automatic completion of omitted trailing function/template parentheses in both Home and graph/Y= evaluation, parentheses, unary minus, right-associative exponentiation, `π`, `e`, `EE` scientific notation, forward and inverse angle-mode-aware trig, `log`, `ln`, `10^(`, `e^(`, `sqrt(`, `cubeRoot(`, `root(index,value)`, exact `frac`/`mixed`, `logBASE`, legacy `nthRoot(value,index)`, `nPr`, `nCr`, factorial, and persistent scalar variables. Common 30°/45°/90° families and their radian equivalents are normalized to deterministic identities; tangent poles report `Error: Domain`.
   - Scientific exponents are limited to the supported Double-scale interval `-308..308`. Nonzero results that underflow to zero report `Error: Result out of range`; overflow reports `Error: Result too large`, including after scientific functions and in rectangular complex parsing.
-  - When the real evaluator cannot represent a complex-valued result and Mode is set to `a+bi`, `ComplexExpressionEvaluator` retries the complete expression with principal-value complex arithmetic. Real domain and range failures are not bypassed by that fallback. It supports arithmetic, powers, implicit multiplication, `Ans`, `i`, constants, scalar variables, parentheses, forward/inverse scientific functions, and square root. Rectangular results simplify unit coefficients (`i`, `-i`) and near-zero floating-point residue; for example, `sqrt(-1)` displays `i`.
+  - When the real evaluator cannot represent a complex-valued result and Mode is set to `a+bi`, `ComplexExpressionEvaluator` retries the complete expression with principal-value complex arithmetic. Real domain and range failures are not bypassed by that fallback. It supports arithmetic, powers, implicit multiplication, `Ans`, `i`, constants, scalar variables, parentheses, forward/inverse scientific functions, and square root. Rectangular results simplify unit coefficients (`i`, `-i`) and near-zero floating-point residue; for example, `sqrt(-1)` displays `i`. Shared complex division scales by the denominator magnitude before intermediate products, preventing false zero-division or infinity at extreme finite magnitudes.
   - Phase 3 evaluator foundations add `=`, `≠`, `>`, `≥`, `<`, `≤`, numeric `and`/`or`/`xor`/`not(`, comma-separated arguments, and scalar `abs`, `round`, `iPart`, `fPart`, `int`, `min`, `max`, `gcd`, `lcm`, and `remainder`. Phase 4 exposes reviewed TEST/LOGIC, partial ANGLE, and partial MATH-family entry paths. DISTR, random generators, and dependent MATH rows remain hidden or visibly unavailable.
 - `CalculatorVariableMemory` saves A-Z and `θ` in `config/mi84_calc_scalar_variables.txt`.
   - Every scalar variable defaults to real zero; `expression→variable` stores real values or rectangular-complex values in `a+bi` mode.
@@ -115,7 +123,8 @@
   - Angle Unit (`Degree`/`Radian`) controls real and complex trigonometric evaluation.
   - Complex Number Format `a+bi` enables rectangular complex fallback evaluation; `Real` retains real-only evaluation. The other stored Mode choices remain available for calculator systems that have not been implemented yet.
 - `YEqualsMemory` saves the nine Y= expressions in `config/mi84_calc_y_equals_memory.txt`; colors, selections, and forward-edit cursors are retained during the client session.
-- `WindowSettingsMemory` saves graph settings in `config/mi84_calc_window_settings.txt`; defaults are Xmin `-10`, Xmax `10`, Xscl `1`, Ymin `-10`, Ymax `10`, Yscl `1`, Xres `1`, ΔX `5/66`, and TraceStep `5/33`.
+- `CalculatorListMemory` limits every built-in or named list to 999 real elements. STAT→Edit clamps navigation at the last element of a full list and defensively rejects an out-of-range commit. `seq` uses shared token-aware scalar substitution so function, Ans, graph-variable, and list identifiers are not rewritten.
+- `WindowSettingsMemory` saves graph settings in `config/mi84_calc_window_settings.txt`; defaults are Xmin `-10`, Xmax `10`, Xscl `1`, Ymin `-10`, Ymax `10`, Yscl `1`, Xres `1`, ΔX `5/66`, and TraceStep `5/33`. `Xres` must evaluate to an exact integer in `1..8`.
 - `ZoomMemory` saves a ZoomSto window and the selected Zoom In/Out denominator in `config/mi84_calc_zoom_memory.txt`. Zoom Previous toggles between the current and preceding window, ZoomSto saves the current window, ZoomRcl restores it, and SetFactors chooses `1/2`, `1/3`, `1/4`, `1/5`, `1/8`, or `1/10` for cursor-centered Zoom In/Out.
 
 ## Implementation status
@@ -161,6 +170,7 @@
 - Split widget, renderer, transient UI state, and per-view input controllers
 - Automated layout, overlap, mapping, modifier, and transition checks
 - Logged temp-file persistence that preserves the last good file on failed saves
+- Release-boundary regressions for full 999-element lists, token-safe `seq`, extreme finite complex division, and TI-84 `Xres` validation
 
 ### Remaining
 
@@ -216,9 +226,14 @@
 
 ### Required verification
 
-- Run `./gradlew check build` for every implementation change.
+- Run `./gradlew check build` for every implementation change; use `./gradlew clean check build`
+  for a release candidate.
 - Maintain tests proving every physical key exists exactly once, hitboxes do not overlap, and primary mappings are exhaustive.
 - Add tests for modifier activation, cancellation, one-shot consumption, and no fallthrough.
 - Add characterization tests before moving untested behavior.
 - Manually smoke-test the inventory overlay after rendering, sizing, hitbox, or Minecraft integration changes.
-- Keep `ARCHITECTURE.md`, `BUTTON_MATRIX.md`, and this file synchronized with implementation changes.
+- Confirm the remapped release JAR contains the expected `fabric.mod.json` version/environment,
+  license, icon, and client assets before publishing.
+- Keep README, changelog, feature status, `ARCHITECTURE.md`, `BUTTON_MATRIX.md`,
+  `BUTTON_REFERENCE.md`, `BUTTON_IMPLEMENTATION_PLAN.md`, and this file synchronized with
+  implementation changes.

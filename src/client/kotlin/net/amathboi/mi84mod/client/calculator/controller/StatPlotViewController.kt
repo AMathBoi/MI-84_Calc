@@ -6,7 +6,7 @@ import net.amathboi.mi84mod.client.calculator.input.CalculatorCommand
 import net.amathboi.mi84mod.client.calculator.ui.StatPlotScreen
 import net.amathboi.mi84mod.client.calculator.ui.StatPlotViewState
 
-/** Navigation and mutation for STAT PLOT configuration; graph rendering remains deferred. */
+/** Navigation and mutation for STAT PLOT configuration; rendering support is type-specific. */
 object StatPlotViewController {
     const val MAIN_ITEM_COUNT = 5
     const val EDITOR_ROW_COUNT = 6

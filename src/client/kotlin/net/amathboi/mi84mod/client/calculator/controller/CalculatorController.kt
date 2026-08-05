@@ -4,7 +4,6 @@ import java.math.RoundingMode
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.roundToInt
 import net.amathboi.mi84mod.client.calculator.CalculatorDisplayMemory
 import net.amathboi.mi84mod.client.calculator.ExpressionEditingTokens
 import net.amathboi.mi84mod.client.calculator.GraphNavigationMath
@@ -240,7 +239,8 @@ class CalculatorController(
         val yScale = values[5]
         val xResolutionDouble = values[6]
         if (!WindowSettingsMemory.supportsGraphBounds(xMin, xMax, yMin, yMax) ||
-            xScale <= 0.0 || yScale <= 0.0 || xResolutionDouble <= 0.0
+            xScale <= 0.0 || yScale <= 0.0 ||
+            !WindowSettingsMemory.supportsXResolution(xResolutionDouble)
         ) {
             return null
         }
@@ -251,7 +251,7 @@ class CalculatorController(
             yMin,
             yMax,
             yScale,
-            xResolutionDouble.roundToInt().coerceAtLeast(1)
+            xResolutionDouble.toInt()
         )
     }
 

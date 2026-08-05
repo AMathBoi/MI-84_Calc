@@ -1,6 +1,7 @@
 package net.amathboi.mi84mod.client.calculator
 
 import kotlin.math.atan2
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.cosh
 import kotlin.math.exp
@@ -23,12 +24,30 @@ internal data class ComplexNumber(val real: Double, val imaginary: Double = 0.0)
     )
 
     operator fun div(other: ComplexNumber): ComplexNumber {
-        val denominator = other.real * other.real + other.imaginary * other.imaginary
-        if (denominator == 0.0) throw ComplexEvaluationException("Error: Division by zero")
-        return ComplexNumber(
-            (real * other.real + imaginary * other.imaginary) / denominator,
-            (imaginary * other.real - real * other.imaginary) / denominator
+        val scale = maxOf(abs(other.real), abs(other.imaginary))
+        if (scale == 0.0) throw ComplexEvaluationException(DIVISION_BY_ZERO_ERROR)
+        if (!scale.isFinite()) throw ComplexEvaluationException(RESULT_TOO_LARGE_ERROR)
+
+        // Scaling both operands by the denominator's largest component avoids overflowing c²+d²
+        // or underflowing it to zero. Every complex division path, including tan and log-base
+        // conversion, routes through this operator.
+        val denominatorReal = other.real / scale
+        val denominatorImaginary = other.imaginary / scale
+        val scaledReal = real / scale
+        val scaledImaginary = imaginary / scale
+        val denominator =
+            denominatorReal * denominatorReal + denominatorImaginary * denominatorImaginary
+        val quotient = ComplexNumber(
+            (scaledReal * denominatorReal + scaledImaginary * denominatorImaginary) / denominator,
+            (scaledImaginary * denominatorReal - scaledReal * denominatorImaginary) / denominator
         )
+        if (!quotient.isFinite()) throw ComplexEvaluationException(RESULT_TOO_LARGE_ERROR)
+        if (quotient.real == 0.0 && quotient.imaginary == 0.0 &&
+            (real != 0.0 || imaginary != 0.0)
+        ) {
+            throw ComplexEvaluationException(RESULT_OUT_OF_RANGE_ERROR)
+        }
+        return quotient
     }
 
     operator fun unaryMinus() = ComplexNumber(-real, if (imaginary == 0.0) 0.0 else -imaginary)
@@ -90,6 +109,9 @@ internal data class ComplexNumber(val real: Double, val imaginary: Double = 0.0)
 
     private companion object {
         val IMAGINARY_UNIT = ComplexNumber(0.0, 1.0)
+        const val DIVISION_BY_ZERO_ERROR = "Error: Division by zero"
+        const val RESULT_TOO_LARGE_ERROR = "Error: Result too large"
+        const val RESULT_OUT_OF_RANGE_ERROR = "Error: Result out of range"
     }
 }
 

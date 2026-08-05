@@ -7,6 +7,60 @@ object ExpressionEditingTokens {
 
     private val yFunctionSubscripts = listOf("₁", "₂", "₃", "₄", "₅", "₆", "₇", "₈", "₉")
 
+    /**
+     * Shared scalar/list function vocabulary. Keeping it here lets editing and expression
+     * transformations recognize complete function identifiers instead of treating the Alpha
+     * letters inside names such as `logBASE` as independent variables.
+     */
+    val functionNames = listOf(
+        "sin⁻¹",
+        "cos⁻¹",
+        "tan⁻¹",
+        "R►Pr",
+        "R►Pθ",
+        "P►Rx",
+        "P►Ry",
+        "mixed",
+        "logBASE",
+        "nthRoot",
+        "root",
+        "cubeRoot",
+        "remainder",
+        "frac",
+        "sqrt",
+        "nPr",
+        "nCr",
+        "iPart",
+        "fPart",
+        "round",
+        "abs",
+        "min",
+        "max",
+        "lcm",
+        "gcd",
+        "int",
+        "SortA",
+        "SortD",
+        "dim",
+        "Fill",
+        "seq",
+        "cumSum",
+        "ΔList",
+        "augment",
+        "mean",
+        "median",
+        "sum",
+        "prod",
+        "stdDev",
+        "variance",
+        "not",
+        "sin",
+        "cos",
+        "tan",
+        "log",
+        "ln"
+    )
+
     private val namedVariableTokens =
         (
             listOf(
@@ -103,6 +157,51 @@ object ExpressionEditingTokens {
             position >= token.length &&
                 expression.regionMatches(position - token.length, token, 0, token.length)
         }
+
+    /**
+     * Replaces only complete scalar-variable tokens. Function names, Ans, graph variables, and
+     * list references remain intact even when their storage text contains the same Alpha letter.
+     */
+    fun substituteScalarVariable(
+        expression: String,
+        variable: CalculatorVariable,
+        replacement: String
+    ): String {
+        if (variable.symbol !in expression) return expression
+
+        val substituted = StringBuilder(expression.length + replacement.length)
+        var index = 0
+        while (index < expression.length) {
+            val protectedToken = protectedSubstitutionTokenStartingAt(expression, index)
+            if (protectedToken != null) {
+                substituted.append(protectedToken)
+                index += protectedToken.length
+            } else {
+                val character = expression[index++]
+                if (character == variable.symbol) substituted.append(replacement)
+                else substituted.append(character)
+            }
+        }
+        return substituted.toString()
+    }
+
+    private fun protectedSubstitutionTokenStartingAt(expression: String, position: Int): String? {
+        namedVariableStartingAt(expression, position)?.let { return it }
+        functionNames.firstOrNull { function ->
+            expression.startsWith(function, position) &&
+                expression.getOrNull(position + function.length) == '('
+        }?.let { return it }
+        listOf("Ans", "EE").firstOrNull { expression.startsWith(it, position) }?.let { return it }
+        if (expression.getOrNull(position) == 'L' && expression.getOrNull(position + 1) in '1'..'6') {
+            return expression.substring(position, position + 2)
+        }
+        if (expression.getOrNull(position) == '@') {
+            var end = position + 1
+            while (expression.getOrNull(end) in 'A'..'Z') end++
+            if (end > position + 1) return expression.substring(position, end)
+        }
+        return null
+    }
 
     fun structuredFractionStartingAt(expression: String, position: Int): String? {
         val function = when {

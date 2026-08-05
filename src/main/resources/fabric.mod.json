@@ -3,15 +3,16 @@
   "id": "mi84_calc",
   "version": "${version}",
   "name": "MI-84 Calculator",
-  "description": "An advanced graphing calculator mod for Minecraft.",
+  "description": "A client-side, in-inventory graphing calculator overlay for Minecraft.",
   "authors": ["AMathBoi"],
   "contact": {
     "homepage": "https://github.com/AMathBoi/MI-84_Calc",
-    "sources": "https://github.com/AMathBoi/MI-84_Calc"
+    "sources": "https://github.com/AMathBoi/MI-84_Calc",
+    "issues": "https://github.com/AMathBoi/MI-84_Calc/issues"
   },
   "license": "MIT",
   "icon": "assets/mi84_calc/icon.png",
-  "environment": "*",
+  "environment": "client",
   "entrypoints": {
     "main": [
       {

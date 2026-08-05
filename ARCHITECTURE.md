@@ -6,6 +6,10 @@ The calculator is a client-only Fabric overlay attached to the Minecraft invento
 calculator logic is intentionally separated from Minecraft widget APIs so input behavior can be
 tested without starting the game.
 
+Version 0.3 is the release baseline for the completed Phase 1–6 approved scope. Fabric metadata
+declares the mod client-only; the release supports Minecraft 1.21.1, Fabric Loader 0.19.2 or newer,
+and Java 21.
+
 Phase 6 is complete for its approved scope. PolarGC and the Histogram, modified-box, regular-box,
 and relative-frequency plot renderers remain explicit prerequisite-bound deferrals rather than open
 Phase 6 work.
@@ -82,7 +86,9 @@ should never infer behavior from displayed text.
 - `ExpressionEditingTokens.kt` recognizes completed `frac`/`mixed` storage forms and named
   Window/Zoom/Y-function references as one cursor, overwrite, and forward-delete token across
   Home, Y=, and Window. It also owns shared operand-sign editing and keeps scalar `Y` followed by a
-  digit distinct from the typed subscripted `Y₁`–`Y₉` function-reference tokens.
+  digit distinct from the typed subscripted `Y₁`–`Y₉` function-reference tokens. Its shared
+  function vocabulary and scalar-token substitution protect complete identifiers when expression
+  transforms such as `seq` replace a variable.
 - `MathDisplayTokens.kt` recognizes complete and in-progress fraction, root, permutation, and
   combination evaluator tokens for nonlinear LCD presentation without changing stored expressions.
 
@@ -123,11 +129,14 @@ Persistent calculator content does not belong in `CalculatorUiState`.
 - `CalculatorListMemory` owns persistent typed L1–L6 values. `CalculatorListOperations` provides
   pure list transforms and summary primitives. It also owns ordered, uppercase user-named lists
   created from the STAT→Edit header flow; their five-character names and placement persist with the
-  list data.
+  list data. A list contains at most 999 values; both domain construction and editor navigation
+  enforce that boundary.
 - `CalculatorListExpressionEvaluator` owns real-list literals, named references, LIST OPS/MATH,
   calculator-style sequences, persistent Fill, and correlated multi-list sorting. List cells reuse
   the scalar evaluator and store raw precision; rendering alone applies the active display format.
-- `ComplexExpressionEvaluator` owns complex fallback evaluation.
+- `ComplexExpressionEvaluator` owns complex fallback evaluation. Complex division normalizes by
+  the denominator's largest component so finite extreme magnitudes do not overflow or underflow in
+  the intermediate `c²+d²`; all complex division callers share the guarded operator.
 - The real and complex evaluators share the Phase 1 expression vocabulary: explicit `Ans`, `i`,
   `π`, `e`, inverse trig, `10^(`, `e^(`, `sqrt(`, and `EE`. Common 30°/45°/90° families and their
   radian equivalents use deterministic forward/inverse identities; tangent poles remain domain
@@ -172,7 +181,8 @@ Persistent calculator content does not belong in `CalculatorUiState`.
   closing delimiter when Right leaves the completed second field.
 - `YEqualsMemory`, `WindowSettingsMemory`, `TableSettingsMemory`, `FormatSettingsMemory`,
   `ModeSettingsMemory`, and `ZoomMemory` own their respective
-  persistent domains.
+  persistent domains. Window text remains editable as an expression, while graph consumption and
+  programmatic window changes enforce TI-84 `Xres` semantics: an exact integer from 1 through 8.
 - `FormatSettingsMemory` stores only renderer-backed choices: rectangular trace-coordinate
   visibility plus graph grid, axes, and axis-label presentation. PolarGC remains visible but
   unavailable until polar graph functions exist.
@@ -236,6 +246,8 @@ Automated tests should cover:
 - modifier cancellation and one-shot consumption;
 - direct and view-specific state transitions;
 - evaluator, persistence, history, graph, trace, and zoom edge cases.
+- list-capacity boundaries, token-aware `seq` substitution, extreme complex division, and exact
+  integer `Xres` values from 1 through 8.
 
 Manual Minecraft smoke checks should cover:
 
@@ -264,3 +276,16 @@ Manual Minecraft smoke checks should cover:
 - Do not combine an input refactor with a persistence-format migration.
 - Treat approximately 700 lines as a review signal, not an automatic failure. Split a file when it
   owns unrelated reasons to change.
+
+## Release procedure
+
+1. Set `mod_version` in `gradle.properties` and add the matching dated section to `CHANGELOG.md`.
+2. Update `README.md` and `FEATURE_STATUS.md`; `verifyCalculatorArchitecture` checks that all three
+   public documents identify the same Gradle release version.
+3. Reconcile `BUTTON_MATRIX.md`, `BUTTON_REFERENCE.md`, `BUTTON_IMPLEMENTATION_PLAN.md`,
+   `ARCHITECTURE.md`, and `AGENTS.md` with the implemented and explicitly deferred scope.
+4. Run `./gradlew clean check build` and `git diff --check`.
+5. Inspect the remapped release JAR: filename, embedded `fabric.mod.json` version/environment,
+   license, icon, and client assets.
+6. Perform the manual Minecraft smoke checks above before tagging or publishing. Creating a tag or
+   uploading an artifact remains an explicit release action, not part of documentation preparation.

@@ -34,11 +34,11 @@ records the prerequisite subsystem and confirms the visual gate without repeatin
 | APPS | A deliberately designed application storage and lifecycle, or an explicit unsupported decision | First review the empty state; review launching only after the subsystem exists |
 | PRGM EXEC/EDIT/NEW and command tabs | Program and string storage, editor, interpreter, and I/O model | Review program lists, editor states, and command tabs separately |
 | VARS/Y-VARS and F4 YVAR | Only typed variables backed by an implemented memory/graph domain | Review category tabs, unavailable rows, and selection return behavior |
-| STAT PLOT | Stable lists and graph-plot rendering | Main configuration and plot editor reviewed; graph rendering remains a separate visual/domain review |
+| STAT PLOT | Stable lists and graph-plot rendering | Configuration plus Scatter/Line rendering are reviewed and implemented; distribution renderers remain separately gated |
 | TBLSET and TABLE | Table settings/evaluation using graph functions | Approved and implemented with signed Auto rows, Auto/Ask entry, scrolling, editable Y headers, and error cells |
 | FORMAT | Graph renderer support for every option shown | Do not display decorative settings that have no runtime effect |
 | Graph CALC | Numerical graph-analysis primitives and interaction state | Review each operation's prompts, markers, cancellation, and errors separately |
-| INS indicator | Insert/overwrite editor state | INS may ship without an indicator; any indicator requires review |
+| INS indicator | Insert/overwrite editor state | Reviewed and implemented as a blinking underscore cursor in insert mode |
 | A-LOCK indicator | General scalar Alpha input | Reviewed and implemented 2026-07-26 |
 | LINK | A safe transfer format and local or remote transport | Review SEND and RECEIVE only after the transport is defined |
 | LIST | Typed list values, storage, evaluator operations, and editor | Review NAMES/OPS/MATH and list-editor states separately |
@@ -61,7 +61,7 @@ records the prerequisite subsystem and confirms the visual gate without repeatin
 | Key | Behavior and use |
 |---|---|
 | Y= | Opens the existing editor for `Y1` through `Y9`. Arrows select and edit equations. |
-| Window | Opens the existing graph-window editor. Arrows select settings and entry keys edit them. |
+| Window | Opens the existing graph-window editor. Arrows select settings and entry keys edit them; `Xres` must evaluate to an exact integer from 1 through 8 before the window can be graphed. |
 | Zoom | Opens the existing ZOOM/MEMORY view. Number and Alpha A-G hotkeys select operations. |
 | Trace | Opens Graph with a trace cursor. Left/right change X; up/down change active equation. |
 | Graph | Opens the existing graph view and plots all enabled, non-empty Y= expressions. |
@@ -133,10 +133,10 @@ reviewed TEST/LOGIC, partial ANGLE, and partial MATH-family entry paths; DISTR r
 - Probability primitives remain deferred until a numerical library and accuracy strategy receive
   separate approval. MathPrint templates and every menu presentation remain behind visual review.
 
-## Unsupported Normal menus
+## Normal-layer menus
 
-These physical buttons are currently explicit unsupported commands. Their intended Normal behavior
-is documented here and deferred according to `BUTTON_MATRIX.md`.
+These buttons open larger menu domains. Some reviewed slices are implemented while the remaining
+items are unavailable according to the authoritative statuses in `BUTTON_MATRIX.md`.
 
 ### STAT
 
@@ -155,8 +155,9 @@ literal such as `L1={2,2,2}` into the bottom entry line. The first Enter on a se
 the bottom line for normal cursor editing; a subsequent Enter replaces the list when the literal is
 valid, clears it when the entry is empty, and restores the prior literal on syntax error. Enter from
 a normal cell evaluates a real scalar expression and advances one row. The table formats the result
-using the active display settings without discarding its full stored precision. Complex cell editing
-and the remaining STAT menu items remain deferred.
+using the active display settings without discarding its full stored precision. Lists contain at
+most 999 elements; a full list keeps its final row selected instead of exposing a 1,000th entry.
+Complex cell editing and the remaining STAT menu items remain deferred.
 
 | Item | Behavior |
 |---|---|
@@ -447,9 +448,9 @@ Returns to Home from any view and clears transient selection/navigation state. T
 #### 2nd Del: INS
 
 Toggles insert versus overwrite editing. Insert mode adds before the cursor; overwrite mode replaces
-the token under the cursor in Home, Y=, and Window. The mode is transient, starts in overwrite, and
-persists while moving between those views. Phase 2 deliberately adds no visual indicator; any future
-indicator must be approved separately.
+the token under the cursor in Home, Y=, Window, and TABLE SETUP value rows. The mode is transient,
+starts in overwrite, and persists while moving between supported editors. Insert mode uses the
+reviewed blinking underscore cursor while preserving the token beneath it.
 
 #### 2nd Alpha: A-LOCK
 
@@ -477,6 +478,10 @@ statistics/plots; list/matrix conversions remain deferred to Phase 8.
 
 LIST function entries are whole forward-editor tokens and use the standard omitted-final-parenthesis
 completion: for example, `min(L1` submits as `min(L1)`.
+
+`seq(expression,variable,start,end[,step])` substitutes only complete scalar-variable tokens.
+Function names, `Ans`, `EE`, graph-variable tokens, built-in lists, and user-named list references
+remain intact even when their stored spelling contains the chosen variable letter.
 
 When a list-table header is selected, `2nd` + Del opens a temporary `_` header immediately to its
 left. Alpha keys supply an uppercase name of up to five characters; Enter creates the persistent

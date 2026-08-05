@@ -221,7 +221,7 @@ object CalculatorDisplayMemory {
         appendText(token, insertMode)
     }
 
-    /** Phase 5 nonvisual list syntax. Result presentation is intentionally deferred. */
+    /** Inserts the Phase 5 list-literal opener through the shared expression editor. */
     fun appendListLiteralOpen(insertMode: Boolean = false) = appendPrimaryToken("{", insertMode)
 
     fun appendListLiteralClose(insertMode: Boolean = false) {
@@ -842,54 +842,7 @@ object CalculatorDisplayMemory {
     private const val MAX_HISTORY_ENTRIES = 1_000
     private const val DEFAULT_ROUND_SIGNIFICANT_DIGITS = 10
     private val FRACTION_RESULT_PATTERN = Regex("-?\\d+/-?\\d+")
-    private val FUNCTIONS = listOf(
-        INVERSE_SINE,
-        INVERSE_COSINE,
-        INVERSE_TANGENT,
-        RECTANGULAR_TO_RADIUS,
-        RECTANGULAR_TO_ANGLE,
-        POLAR_TO_X,
-        POLAR_TO_Y,
-        MIXED_FRACTION_FUNCTION,
-        LOG_BASE_FUNCTION,
-        NTH_ROOT_FUNCTION,
-        INDEXED_ROOT_FUNCTION,
-        CUBE_ROOT_FUNCTION,
-        "remainder",
-        FRACTION_FUNCTION,
-        SQUARE_ROOT,
-        PERMUTATION_FUNCTION,
-        COMBINATION_FUNCTION,
-        "iPart",
-        "fPart",
-        "round",
-        "abs",
-        "min",
-        "max",
-        "lcm",
-        "gcd",
-        "int",
-        "SortA",
-        "SortD",
-        "dim",
-        "Fill",
-        "seq",
-        "cumSum",
-        "ΔList",
-        "augment",
-        "mean",
-        "median",
-        "sum",
-        "prod",
-        "stdDev",
-        "variance",
-        "not",
-        "sin",
-        "cos",
-        "tan",
-        "log",
-        "ln"
-    )
+    private val FUNCTIONS = ExpressionEditingTokens.functionNames
     private val TRIG_FUNCTIONS = setOf("sin", "cos", "tan")
     private val RELATIONAL_OPERATORS = listOf("≠", "≥", "≤", "=", ">", "<")
     private val BOOLEAN_OPERATOR_TOKENS = listOf("and", "xor", "or")

@@ -124,8 +124,12 @@ object ListEditorController {
             return
         }
         val dimension = CalculatorListMemory.value(selectedName(state))?.dimension ?: 0
-        state.selectedRowIndex = state.selectedRowIndex.coerceIn(0, dimension)
-        val lastRow = dimension
+        val lastRow = if (dimension < CalculatorListValue.MAX_LIST_LENGTH) {
+            dimension
+        } else {
+            (dimension - 1).coerceAtLeast(0)
+        }
+        state.selectedRowIndex = state.selectedRowIndex.coerceIn(0, lastRow)
         state.selectedRowIndex = (state.selectedRowIndex + delta).coerceIn(0, lastRow)
         state.firstVisibleRowIndex = when {
             state.selectedRowIndex < state.firstVisibleRowIndex -> state.selectedRowIndex
@@ -143,6 +147,10 @@ object ListEditorController {
         val value = CalculatorDisplayMemory.evaluateRealForListEntry(state.entry) ?: return
         val name = selectedName(state)
         val current = CalculatorListMemory.value(name)?.values?.toMutableList() ?: return
+        if (state.selectedRowIndex !in 0 until CalculatorListValue.MAX_LIST_LENGTH ||
+            (state.selectedRowIndex >= current.size &&
+                current.size >= CalculatorListValue.MAX_LIST_LENGTH)
+        ) return
         while (current.size <= state.selectedRowIndex) current += CalculatorScalarValue(BigDecimal.ZERO)
         current[state.selectedRowIndex] = CalculatorScalarValue(value)
         CalculatorListMemory.set(name, CalculatorListValue(current))

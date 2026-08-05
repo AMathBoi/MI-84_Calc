@@ -1,24 +1,44 @@
 The Minecraft Instruments 84: an all-in-one calculator for blocky calculations!
 
-MI-84 Calculator adds a draggable graphing-calculator overlay to the Minecraft inventory.
+**Version 0.3** targets **fabric 1.21.1** and is client-side only. It's the latest development version.
 
-Under development! Only 1.21.1 fabric for now, more versions will be launched in the future. Latest version is 0.2, launched on 7/28/26
+## Dependencies
 
-## Using the calculator
+- Fabric API
+- Fabric Language Kotlin
 
-Open an inventory, then click the `X` button at its bottom-left corner to show the calculator or use the keybind.
-Drag the calculator from its top. The default controls, active only while an inventory is open,are:
+## Use
 
-- `N` — reset calculator position
+Open an inventory and click the `X` button at the bottom-left or the `H` Hotkey to show or hide the calculator. 
+
+The default keybindings work only while an inventory is open:
+
+- `N` — reset the calculator position
 - `H` — toggle calculator visibility
-- `K` — toggle the visibility of the inventory `X` button
+- `K` — toggle the inventory `X` button
 
-All three bindings can be changed in Minecraft's Controls menu under **MI-84 Calculator**.
+All three bindings can be changed under Controls.
 
-Currently, the calculator includes all scientific functions, basic graphing features, and some more advanced features.
+## Version 0.3 highlights
+
+- Scientific and rectangular-complex calculation with persistent history and scalar variables.
+- Structured fractions, roots, combinatorics, TEST/LOGIC, partial ANGLE and MATH-family menus.
+- Persistent real lists, named lists, STAT→Edit, and LIST NAMES/OPS/MATH operations.
+- Y=, Window, trace, zoom, graph TABLE/TBLSET, and renderer-backed FORMAT settings.
+- Persistent STAT PLOT configuration with Scatter and Line rendering.
 
 ![Home view demo](https://cdn.modrinth.com/data/cached_images/06423470f6a3ffef7451f0f7b4c01114e9c96ead_0.webp)
 
 ![Graph view demo](https://cdn.modrinth.com/data/cached_images/95308680e512e425e868199b859085f6f713652e_0.webp)
 
-For a complete public status table covering every button and major feature area, see [Feature Status](FEATURE_STATUS.md).
+## Current limitations
+
+- Input uses the calculator's on-screen keys; computer-keyboard expression entry is not supported.
+- Polar and sequence graph modes, graph CALC tools, matrices, programming, and statistical
+  calculations remain deferred.
+- Statplot Histogram, box-plot, and relative-frequency settings are visible as `[deferred]`; only Scatter
+  and Line currently render.
+- The overlay may be clipped at unusually small GUI sizes
+
+See [Feature Status](FEATURE_STATUS.md) for the complete public implementation table and
+[Changelog](CHANGELOG.md) for release details.

@@ -63,6 +63,10 @@ object WindowSettingsMemory {
             bound.toDoubleOrNull() ?: CalculatorDisplayMemory.evaluateForGraph(bound, 0.0) ?: return false
         }
         if (!supportsGraphBounds(numericBounds[0], numericBounds[1], numericBounds[2], numericBounds[3])) return false
+        val numericXResolution = xResolution.toDoubleOrNull()
+            ?: CalculatorDisplayMemory.evaluateForGraph(xResolution, 0.0)
+            ?: return false
+        if (!supportsXResolution(numericXResolution)) return false
 
         graphValues.forEachIndexed { index, value ->
             values[index] = value
@@ -78,6 +82,10 @@ object WindowSettingsMemory {
             xMax - xMin >= MINIMUM_BOUND_SPAN &&
             yMax - yMin >= MINIMUM_BOUND_SPAN
     }
+
+    /** TI-84 Xres accepts only exact integers from 1 through 8. */
+    fun supportsXResolution(value: Double): Boolean =
+        value.isFinite() && value in 1.0..8.0 && value == value.toInt().toDouble()
 
     fun selectPrevious() = select(selectedIndex - 1)
 
